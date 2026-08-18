@@ -9,13 +9,13 @@ DATA_INICIAL = "20230101"
 DATA_FINAL = datetime.now().strftime("%Y%m%d")
 
 DIRETORIO_DADOS = "dados"
-ARQUIVO_SAIDA = f"{DIRETORIO_DADOS}/contratos.parquet"
+ARQUIVO_SAIDA = f"{DIRETORIO_DADOS}/compras.parquet" 
 
 def extrair_dados_pncp():
-    url = f"https://pncp.gov.br/api/pncp/v1/orgaos/{CNPJ_ORGAO}/contratos"
+    url = f"https://pncp.gov.br/api/pncp/v1/orgaos/{CNPJ_ORGAO}/compras"
     pagina = 1
     tamanho_pagina = 50
-    todos_contratos = []
+    todas_compras = []
 
     while True:
         params = {"dataInicial": DATA_INICIAL, "dataFinal": DATA_FINAL, "pagina": pagina, "tamanhoPagina": tamanho_pagina}
@@ -28,28 +28,23 @@ def extrair_dados_pncp():
             
             if not registros:
                 break
-            todos_contratos.extend(registros)
+            todas_compras.extend(registros)
             if len(registros) < tamanho_pagina:
                 break
             pagina += 1
             time.sleep(0.5)
         except Exception:
             break
-    return todos_contratos
+    return todas_compras
 
-def salvar_dados(lista_contratos):
-    # Cria a pasta 'dados' se ela não existir
+def salvar_dados(lista_compras):
     os.makedirs(DIRETORIO_DADOS, exist_ok=True)
-    
-    # Prevenção contra o erro de DataFrame sem colunas do Parquet
-    if not lista_contratos:
-        # Cria um DataFrame vazio já com as colunas que o Streamlit espera encontrar
-        df = pd.DataFrame(columns=['id', 'dataAssinatura', 'valorInicial', 'nomeRazaoSocialFornecedor'])
+    if not lista_compras:
+        df = pd.DataFrame(columns=['numeroCompra', 'anoCompra', 'dataPublicacaoPncp', 'valorTotalEstimado', 'objetoCompra'])
     else:
-        df = pd.DataFrame(lista_contratos)
+        df = pd.DataFrame(lista_compras)
         
     df.to_parquet(ARQUIVO_SAIDA, index=False)
-    print("Arquivo salvo com sucesso.")
 
 if __name__ == "__main__":
     dados = extrair_dados_pncp()
