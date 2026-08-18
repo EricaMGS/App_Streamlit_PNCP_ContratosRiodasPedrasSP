@@ -18,5 +18,5 @@ jobs:
       - run: |
           git config --global user.name 'Bot de Atualizacao'
           git config --global user.email 'bot@pncp.com'
-          git add dados/contratos.parquet
+          git add dados/
           git diff --quiet && git diff --staged --quiet || (git commit -m "Atualizacao dos dados do PNCP" && git push)
