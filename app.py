@@ -22,10 +22,12 @@ if st.sidebar.button("Gerar Relatório"):
   with st.spinner("Consultando API do PNCP..."):
     cnpj_prefeitura = "44826840000183"
 
+    # O PNCP exige estritamente o formato AAAAMMDD
     d_inicio_str = data_inicio.strftime("%Y%m%d")
     d_fim_str = data_fim.strftime("%Y%m%d")
 
-    url = "https://pncp.gov.br/api/consulta/v1/contratacoes"
+    # Endpoint correto com o sufixo '/publicacao'
+    url = "https://pncp.gov.br/api/consulta/v1/contratacoes/publicacao"
 
     params = {
         "cnpjOrgao": cnpj_prefeitura,
@@ -34,7 +36,6 @@ if st.sidebar.button("Gerar Relatório"):
         "pagina": 1,
     }
 
-    # Cabeçalho simulando um navegador para evitar bloqueio do servidor
     headers = {
         "User-Agent": (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,"
@@ -44,7 +45,6 @@ if st.sidebar.button("Gerar Relatório"):
     }
 
     try:
-      # Adicionado timeout de 15 segundos para evitar travamentos
       response = requests.get(url, params=params, headers=headers, timeout=15)
 
       if response.status_code == 200:
