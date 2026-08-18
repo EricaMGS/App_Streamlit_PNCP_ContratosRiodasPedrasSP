@@ -8,7 +8,7 @@ from fpdf import FPDF
 st.set_page_config(page_title="Portal PNCP - Rio das Pedras/SP", layout="wide")
 
 st.title("🏛️ Contratações de Rio das Pedras/SP")
-st.markdown("Consulta integrada de Contratos, Atas e Editais direto do PNCP.")
+st.markdown("Consulta integrada de Contratos, Atas e Editais direto do Portal Nacional de Contratações Públicas.")
 
 # --- BARRA LATERAL ---
 st.sidebar.header("Parâmetros da Consulta")
@@ -17,6 +17,18 @@ tipo_consulta = st.sidebar.selectbox("Selecione:", [
     "Atas de Registro de Preços", 
     "Editais e Avisos de Contratação"
 ])
+
+# Se for editais, exibe a modalidade obrigatória exigida pela API do PNCP
+modalidade_codigo = None
+if tipo_consulta == "Editais e Avisos de Contratação":
+    modalidade_opcoes = {
+        "Pregão - Eletrônico (6)": 6,
+        "Dispensa de Licitação (8)": 8,
+        "Inexigibilidade (9)": 9,
+        "Concorrência - Eletrônica (2)": 2
+    }
+    mod_escolhida = st.sidebar.selectbox("Modalidade:", list(modalidade_opcoes.keys()))
+    modalidade_codigo = modalidade_opcoes[mod_escolhida]
 
 data_inicio = st.sidebar.date_input("Data Inicial", value=pd.to_datetime("2026-01-01"))
 data_fim = st.sidebar.date_input("Data Final", value=pd.to_datetime("2026-08-18"))
@@ -47,17 +59,17 @@ if st.sidebar.button("Gerar Relatório"):
     with st.spinner("Consultando dados no PNCP..."):
         cnpj_alvo = "44826840000183"
         
-        # Parâmetros padrão obrigatórios exigidos pela API atualizada do PNCP
+        # Parâmetros obrigatórios atualizados
         params = {
             "cnpj": cnpj_alvo, 
             "dataInicial": data_inicio.strftime("%Y%m%d"), 
             "dataFinal": data_fim.strftime("%Y%m%d"),
-            "pagina": 1  # <-- PARÂMETRO OBRIGATÓRIO QUE ESTAVA FALTANDO
+            "pagina": 1
         }
         
-        # Se for editais, a API exige modalidade. Vamos tratar ou informar o usuário se falhar.
-        if tipo_consulta == "Editais e Avisos de Contratação":
-            params["codigoModalidadeContratacao"] = 6  # Exemplo padrão (Pregão Eletrônico) ou omitimos se der erro
+        # Adiciona a modalidade caso seja edital (exigência da API)
+        if tipo_consulta == "Editais e Avisos de Contratação" and modalidade_codigo:
+            params["codigoModalidadeContratacao"] = modalidade_codigo
 
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
@@ -84,7 +96,7 @@ if st.sidebar.button("Gerar Relatório"):
                         st.warning("Nenhum registro encontrado especificamente para o CNPJ de Rio das Pedras neste período.")
                 else:
                     st.session_state.df_resultado = pd.DataFrame()
-                    st.warning("Nenhum registro retornado pelo servidor.")
+                    st.warning("Nenhum registro retornado pelo servidor para os filtros informados.")
             else:
                 st.error(f"Erro na API (Status {resp.status_code}): {resp.text}")
                 st.session_state.df_resultado = None
