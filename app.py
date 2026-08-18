@@ -1,117 +1,63 @@
-import streamlit as st
 import pandas as pd
-from pathlib import Path
+import requests
+import streamlit as st
 
 st.set_page_config(
-    page_title="Painel PNCP - Rio das Pedras",
-    page_icon="🏛️",
-    layout="wide"
+    page_title="Consulta PNCP - Rio das Pedras/SP", layout="wide"
 )
 
+st.title("📊 Consulta de Contratações Públicas - Rio das Pedras/SP")
+st.markdown("Dados oficiais extraídos diretamente do PNCP.")
 
-def carregar_dados():
+# Filtros na Barra Lateral
+st.sidebar.header("Filtros")
+data_inicio = st.sidebar.date_input("Data Inicial", value=pd.to_datetime("2026-01-01"))
+data_fim = st.sidebar.date_input("Data Final", value=pd.to_datetime("2026-12-31"))
 
-    caminho_arquivo = (
-        Path(__file__).parent
-        / "dados"
-        / "compras.parquet"
-    )
+if st.sidebar.button("Gerar Relatório"):
+  with st.spinner("Consultando API do PNCP..."):
+    # CNPJ da Prefeitura de Rio das Pedras/SP sem formatação
+    cnpj_prefeitura = "44826840000183"
 
-    if not caminho_arquivo.exists():
-        return pd.DataFrame()
+    # Endpoint oficial de contratações por órgão e período do PNCP
+    # Formato de data exigido pela API do PNCP na URL: AAAAMMDD
+    d_inicio_str = data_inicio.strftime("%Y%m%d")
+    d_fim_str = data_fim.strftime("%Y%m%d")
+
+    url = f"https://pncp.gov.br/api/consulta/v1/orgaos/{cnpj_prefeitura}/contratacoes"
+
+    params = {
+        "data_inicial": d_inicio_str,
+        "data_final": d_fim_str,
+        "pagina": 1,
+    }
 
     try:
-        return pd.read_parquet(
-            caminho_arquivo,
-            engine="pyarrow"
-        )
+      response = requests.get(url, params=params)
 
-    except Exception as erro:
+      if response.status_code == 200:
+        dados = response.json()
+        # O PNCP costuma retornar uma lista direta ou dentro de uma chave 'resultado' / 'items'
+        # Dependendo da versão exata do endpoint, ajustamos o encapsulamento:
+        lista_contratacoes = dados if isinstance(dados, list) else dados.get("items", [])
+        
+        df = pd.DataFrame(lista_contratacoes)
 
-        st.error(
-            f"❌ Erro ao ler o arquivo Parquet: {erro}"
-        )
+        if not df.empty:
+          st.success(f"Sucesso! Encontrados {len(df)} registros para Rio das Pedras/SP.")
+          st.dataframe(df)
 
-        return pd.DataFrame()
-
-
-st.title("🏛️ Painel de Licitações (PNCP)")
-
-st.markdown(
-    "Monitoramento de Editais - Rio das Pedras/SP"
-)
-
-st.divider()
-
-df_compras = carregar_dados()
-st.write("### 🔬 Diagnóstico do Parquet")
-
-st.write(
-    f"Linhas: **{len(df_compras)}**"
-)
-
-st.write(
-    f"Colunas: **{len(df_compras.columns)}**"
-)
-
-st.write(
-    "Nomes das colunas:"
-)
-
-st.write(
-    list(df_compras.columns)
-)
-
-if not df_compras.empty:
-    st.write("### Primeiros registros")
-    st.dataframe(
-        df_compras.head(10),
-        use_container_width=True
-    )
-
-if df_compras.empty:
-
-    st.warning(
-        "⚠️ Os dados ainda não carregaram "
-        "ou a base está vazia."
-    )
-
-    caminho = (
-        Path(__file__).parent
-        / "dados"
-        / "compras.parquet"
-    )
-
-    st.write("### 🔎 Diagnóstico")
-
-    st.write(
-        f"Arquivo esperado: `{caminho}`"
-    )
-
-    st.write(
-        f"Arquivo existe? **{caminho.exists()}**"
-    )
-
-    if caminho.exists():
-
-        tamanho = caminho.stat().st_size
-
-        st.write(
-            f"Tamanho do arquivo: **{tamanho:,} bytes**"
-        )
-
-else:
-
-    st.success(
-        f"✅ Sucesso! Foram encontradas "
-        f"{len(df_compras)} licitações."
-    )
-
-    st.write(
-        f"### 📊 {len(df_compras)} registros"
-    )
-
-    st.dataframe(
-        df_compras,
-        use_container_width=True
-    )
+          # Botão de Download
+          csv = df.to_csv(index=False).encode("utf-8")
+          st.download_button(
+              label="📥 Baixar Relatório em CSV",
+              data=csv,
+              file_name=f"contratacoes_rio_das_pedras_{d_inicio_str}_{d_fim_str}.csv",
+              mime="text/csv",
+          )
+        else:
+          st.warning("Nenhum contrato encontrado no intervalo de datas selecionado.")
+      else:
+        st.error(f"Erro na API do PNCP (Código: {response.status_code})")
+    except Exception as e:
+      st.error(f"Erro de conexão: {e}")
