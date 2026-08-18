@@ -1,0 +1,6 @@
+streamlit
+pandas
+requests
+pyarrow
+fastparquet
+plotly
