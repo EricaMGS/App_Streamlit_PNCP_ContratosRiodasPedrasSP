@@ -86,6 +86,15 @@ if st.sidebar.button("Gerar Relatório Consolidado"):
                 df = df[df["orgaoEntidade"].astype(str).str.contains(cnpj_prefeitura, na=False)]
 
             if not df.empty:
+                # --- FORMATAÇÃO DE DATAS PARA O PADRÃO BRASILEIRO (DD/MM/AAAA) ---
+                colunas_data = [col for col in df.columns if 'data' in col.lower() or 'inicio' in col.lower() or 'fim' in col.lower()]
+                for col in colunas_data:
+                    try:
+                        # Converte para datetime e formata como DD/MM/YYYY (mantendo nulos caso existam)
+                        df[col] = pd.to_datetime(df[col], errors='coerce').dt.strftime('%d/%m/%Y').fillna(df[col])
+                    except Exception:
+                        pass
+
                 st.success(f"Consulta realizada com sucesso! Categoria: {tipo_consulta}")
 
                 c1, c2 = st.columns(2)
