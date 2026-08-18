@@ -1,0 +1,22 @@
+name: Atualizar Dados do PNCP
+
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+jobs:
+  atualizar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      - run: pip install -r requirements.txt
+      - run: python extrator.py
+      - run: |
+          git config --global user.name 'Bot de Atualizacao'
+          git config --global user.email 'bot@pncp.com'
+          git add dados/contratos.parquet
+          git diff --quiet && git diff --staged --quiet || (git commit -m "Atualizacao dos dados do PNCP" && git push)
