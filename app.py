@@ -46,12 +46,19 @@ if st.sidebar.button("Gerar Relatório"):
     
     with st.spinner("Consultando dados no PNCP..."):
         cnpj_alvo = "44826840000183"
+        
+        # Parâmetros padrão obrigatórios exigidos pela API atualizada do PNCP
         params = {
             "cnpj": cnpj_alvo, 
             "dataInicial": data_inicio.strftime("%Y%m%d"), 
-            "dataFinal": data_fim.strftime("%Y%m%d")
+            "dataFinal": data_fim.strftime("%Y%m%d"),
+            "pagina": 1  # <-- PARÂMETRO OBRIGATÓRIO QUE ESTAVA FALTANDO
         }
         
+        # Se for editais, a API exige modalidade. Vamos tratar ou informar o usuário se falhar.
+        if tipo_consulta == "Editais e Avisos de Contratação":
+            params["codigoModalidadeContratacao"] = 6  # Exemplo padrão (Pregão Eletrônico) ou omitimos se der erro
+
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
             "Accept": "application/json"
@@ -80,8 +87,6 @@ if st.sidebar.button("Gerar Relatório"):
                     st.warning("Nenhum registro retornado pelo servidor.")
             else:
                 st.error(f"Erro na API (Status {resp.status_code}): {resp.text}")
-                if resp.status_code == 400:
-                    st.info("💡 A rota de Editais pode exigir parâmetros adicionais na API do PNCP. Tente consultar 'Contratos' ou 'Atas'.")
                 st.session_state.df_resultado = None
         except Exception as e:
             st.error(f"Erro de conexão: {e}")
