@@ -44,7 +44,30 @@ st.markdown(
 st.divider()
 
 df_compras = carregar_dados()
+st.write("### 🔬 Diagnóstico do Parquet")
 
+st.write(
+    f"Linhas: **{len(df_compras)}**"
+)
+
+st.write(
+    f"Colunas: **{len(df_compras.columns)}**"
+)
+
+st.write(
+    "Nomes das colunas:"
+)
+
+st.write(
+    list(df_compras.columns)
+)
+
+if not df_compras.empty:
+    st.write("### Primeiros registros")
+    st.dataframe(
+        df_compras.head(10),
+        use_container_width=True
+    )
 
 if df_compras.empty:
 
