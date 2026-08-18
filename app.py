@@ -5,7 +5,7 @@ import streamlit as st
 
 # Configuração da página responsiva
 st.set_page_config(
-    page_title="Editais e Avisos - Rio das Pedras/SP", layout="wide"
+    page_title="Portal PNCP - Rio das Pedras/SP", layout="wide"
 )
 
 st.markdown(
@@ -17,14 +17,24 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-st.title("📢 Editais e Avisos de Contratação - Rio das Pedras/SP")
+st.title("🏛️ Portal de Transparência - Rio das Pedras/SP")
 st.markdown(
-    "Painel oficial para consulta de editais, avisos e licitações publicadas"
-    " no PNCP."
+    "Consulta integrada de Editais, Atas e Contratos direto do PNCP."
 )
 
-# Filtros na Barra Lateral
-st.sidebar.header("Filtros de Período")
+# --- BARRA LATERAL DE CONFIGURAÇÕES ---
+st.sidebar.header("Parâmetros da Consulta")
+
+# Seletor de Tipo de Documento
+tipo_consulta = st.sidebar.selectbox(
+    "Selecione o tipo de dado:",
+    [
+        "Contratos",
+        "Atas de Registro de Preços",
+        "Editais e Avisos de Contratação",
+    ],
+)
+
 data_inicio = st.sidebar.date_input(
     "Data Inicial", value=pd.to_datetime("2025-01-01")
 )
@@ -32,15 +42,22 @@ data_fim = st.sidebar.date_input(
     "Data Final", value=pd.to_datetime("2026-12-31")
 )
 
-if st.sidebar.button("Consultar Editais e Avisos"):
-  with st.spinner("Buscando editais e avisos no PNCP..."):
-    cnpj_prefeitura = "44826840000183"
+# Mapeamento das URLs da API do PNCP para cada opção
+endpoints = {
+    "Contratos": "https://pncp.gov.br/api/consulta/v1/contratos",
+    "Atas de Registro de Preços": "https://pncp.gov.br/api/consulta/v1/atas",
+    "Editais e Avisos de Contratação": (
+        "https://pncp.gov.br/api/consulta/v1/contratacoes/publicacao"
+    ),
+}
 
+if st.sidebar.button("Gerar Relatório Consolidado"):
+  url_escolhida = endpoints[tipo_consulta]
+
+  with st.spinner(f"Buscando '{tipo_consulta}' no PNCP..."):
+    cnpj_prefeitura = "44826840000183"
     d_inicio_str = data_inicio.strftime("%Y%m%d")
     d_fim_str = data_fim.strftime("%Y%m%d")
-
-    # Endpoint oficial de contratações/publicações (Editais e Avisos)
-    url = "https://pncp.gov.br/api/consulta/v1/contratacoes/publicacao"
 
     headers = {
         "User-Agent": (
@@ -53,7 +70,7 @@ if st.sidebar.button("Consultar Editais e Avisos"):
     all_data = []
     pagina = 1
 
-    # Loop de paginação para capturar todas as publicações do período
+    # Loop de paginação robusto para capturar os registros do período
     while pagina <= 10:
       params = {
           "cnpj": cnpj_prefeitura,
@@ -63,7 +80,9 @@ if st.sidebar.button("Consultar Editais e Avisos"):
       }
 
       try:
-        response = requests.get(url, params=params, headers=headers, timeout=30)
+        response = requests.get(
+            url_escolhida, params=params, headers=headers, timeout=30
+        )
 
         if response.status_code == 200:
           lote = response.json()
@@ -88,46 +107,64 @@ if st.sidebar.button("Consultar Editais e Avisos"):
     if all_data:
       df = pd.DataFrame(all_data)
 
-      # Filtro de segurança por CNPJ
+      # Filtro de segurança por CNPJ na coluna de órgão
       if "orgaoEntidade" in df.columns:
         df = df[
-            df["orgaoEntidade"].astype(str).str.contains(cnpj_prefeitura, na=False)
+            df["orgaoEntidade"].astype(str).str.contains(
+                cnpj_prefeitura, na=False
+            )
         ]
 
       if not df.empty:
-        # Métricas Responsivas
-        c1, c2 = st.columns(2)
-        c1.metric("Total de Editais/Avisos Encontrados", len(df))
+        # --- EXIBIÇÃO DO CONSOLIDADO NA TELA ---
+        st.success(
+            f"Consulta realizada com sucesso! Categoria: {tipo_consulta}"
+        )
 
-        if "valorTotalEstimado" in df.columns:
-          total_est = pd.to_numeric(
-              df["valorTotalEstimado"], errors="coerce"
-          ).sum()
-          c2.metric("Valor Total Estimado", f"R$ {total_est:,.2f}")
+        c1, c2 = st.columns(2)
+        c1.metric(f"Total de Registros ({tipo_consulta})", len(df))
+
+        # Identifica dinamicamente colunas de valor para somar no card gerencial
+        col_valor = None
+        for col in [
+            "valorGlobal",
+            "valorTotalEstimado",
+            "valorHomologado",
+            "valorInicial",
+        ]:
+          if col in df.columns:
+            col_valor = col
+            break
+
+        if col_valor:
+          total_valor = pd.to_numeric(df[col_valor], errors="coerce").sum()
+          c2.metric("Valor Consolidado", f"R$ {total_valor:,.2f}")
         else:
           c2.metric("Município", "Rio das Pedras/SP")
 
-        # Exibição da tabela responsiva
-        st.subheader("📋 Relação de Editais e Avisos Publicados")
+        # Tabela interativa responsiva
+        st.subheader(f"📋 Relação Consolidada: {tipo_consulta}")
         st.dataframe(df, use_container_width=True)
 
-        # Geração do arquivo Excel profissional (.xlsx)
+        # --- GERAÇÃO DO EXCEL FORMATADO (.xlsx) ---
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
-          df.to_excel(writer, index=False, sheet_name="Editais_PNCP")
+          sheet_name_safe = tipo_consulta.replace(" ", "_")[:31]
+          df.to_excel(writer, index=False, sheet_name=sheet_name_safe)
           workbook = writer.book
-          worksheet = writer.sheets["Editais_PNCP"]
+          worksheet = writer.sheets[sheet_name_safe]
           header_format = workbook.add_format(
               {"bold": True, "bg_color": "#003366", "font_color": "white"}
           )
           for col_num, value in enumerate(df.columns.values):
             worksheet.write(0, col_num, value, header_format)
 
+        # Botão de Download na interface
         st.download_button(
-            label="📥 Baixar Relatório de Editais (.xlsx)",
+            label=f"📥 Baixar Relatório de {tipo_consulta} (.xlsx)",
             data=buffer.getvalue(),
             file_name=(
-                f"Editais_Rio_Das_Pedras_{d_inicio_str}_a_{d_fim_str}.xlsx"
+                f"{sheet_name_safe}_Rio_Das_Pedras_{d_inicio_str}_a_{d_fim_str}.xlsx"
             ),
             mime=(
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -135,12 +172,11 @@ if st.sidebar.button("Consultar Editais e Avisos"):
         )
       else:
         st.warning(
-            "Nenhum edital ou aviso encontrado para o CNPJ e período"
-            " selecionados."
+            f"Nenhum registro de '{tipo_consulta}' foi encontrado para o"
+            " período selecionado."
         )
     else:
       st.warning(
-          "Não foram encontrados registros ou o servidor do PNCP está"
-          " temporariamente instável. Tente ampliar o período (ex: a partir de"
-          " 2025)."
+          "Não foi possível carregar os dados ou o servidor do PNCP está"
+          " instável. Tente novamente."
       )
