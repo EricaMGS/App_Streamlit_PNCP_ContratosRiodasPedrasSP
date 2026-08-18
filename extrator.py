@@ -3,13 +3,14 @@ import pandas as pd
 import time
 from pathlib import Path
 
+
 # ============================================================
 # CONFIGURAÇÕES
 # ============================================================
 
 CNPJ_ORGAO = "44826840000183"
 
-URL_API = "https://pncp.gov.br/api/consulta/v1/contratacoes/publicacao"
+URL_API = "https://pncp.gov.br/api/consulta/v1"
 
 DIRETORIO_DADOS = Path(__file__).parent / "dados"
 ARQUIVO_SAIDA = DIRETORIO_DADOS / "compras.parquet"
@@ -18,170 +19,278 @@ ANOS = [2024, 2025, 2026]
 
 TAMANHO_PAGINA = 50
 
+TIMEOUT = 60
+
 
 # ============================================================
-# CONSULTA À API DO PNCP
+# BUSCAR MODALIDADES
+# ============================================================
+
+def buscar_modalidades():
+
+    url = f"{URL_API}/modalidades"
+
+    print()
+    print("=" * 60)
+    print("🔎 Buscando modalidades de contratação no PNCP")
+    print("=" * 60)
+
+    try:
+
+        resposta = requests.get(
+            url,
+            params={"statusAtivo": "true"},
+            timeout=TIMEOUT
+        )
+
+        print(
+            f"HTTP {resposta.status_code}"
+        )
+
+        if resposta.status_code != 200:
+
+            print("❌ Não foi possível obter as modalidades.")
+
+            print(
+                resposta.text[:2000]
+            )
+
+            return []
+
+        dados = resposta.json()
+
+        # Algumas APIs retornam diretamente uma lista,
+        # outras podem colocar a lista dentro de "data".
+        if isinstance(dados, list):
+
+            modalidades = dados
+
+        elif isinstance(dados, dict):
+
+            modalidades = dados.get("data", [])
+
+        else:
+
+            modalidades = []
+
+        if not modalidades:
+
+            print(
+                "❌ A API não retornou modalidades."
+            )
+
+            return []
+
+        print(
+            f"✅ {len(modalidades)} modalidades encontradas."
+        )
+
+        for modalidade in modalidades:
+
+            codigo = modalidade.get("id")
+            nome = modalidade.get("nome")
+
+            print(
+                f"   {codigo} - {nome}"
+            )
+
+        return modalidades
+
+    except requests.exceptions.RequestException as erro:
+
+        print(
+            f"❌ Erro de conexão ao buscar modalidades: {erro}"
+        )
+
+        return []
+
+    except Exception as erro:
+
+        print(
+            f"❌ Erro inesperado ao buscar modalidades: {erro}"
+        )
+
+        return []
+
+
+# ============================================================
+# CONSULTAR CONTRATAÇÕES
 # ============================================================
 
 def extrair_dados_pncp():
 
     todas_licitacoes = []
 
+    modalidades = buscar_modalidades()
+
+    if not modalidades:
+
+        print(
+            "❌ Nenhuma modalidade disponível."
+        )
+
+        return []
+
+    url = f"{URL_API}/contratacoes/publicacao"
+
     for ano in ANOS:
 
         print()
         print("=" * 60)
-        print(f"🔎 Consultando PNCP - ano {ano}")
+        print(f"📅 CONSULTANDO ANO {ano}")
         print("=" * 60)
 
-        pagina = 1
+        for modalidade in modalidades:
 
-        while True:
+            codigo_modalidade = modalidade.get("id")
+            nome_modalidade = modalidade.get("nome")
 
-            params = {
-                "dataInicial": f"01/01/{ano}",
-                "dataFinal": f"31/12/{ano}",
-                "cnpjOrgao": CNPJ_ORGAO,
-                "pagina": pagina,
-                "tamanhoPagina": TAMANHO_PAGINA
-            }
+            if codigo_modalidade is None:
 
-            try:
+                continue
 
-                print(
-                    f"📡 Página {pagina}..."
-                )
+            print()
+            print(
+                f"🔎 Modalidade: "
+                f"{nome_modalidade} "
+                f"(código {codigo_modalidade})"
+            )
 
-                resposta = requests.get(
-                    URL_API,
-                    params=params,
-                    timeout=60
-                )
+            pagina = 1
 
-                print(
-                    f"   HTTP {resposta.status_code}"
-                )
+            while True:
 
-                # ------------------------------------------------
-                # Verifica erro HTTP
-                # ------------------------------------------------
-
-                if resposta.status_code != 200:
-
-                    print("❌ A API retornou um erro.")
-
-                    print(
-                        "Resposta do servidor:"
-                    )
-
-                    print(
-                        resposta.text[:2000]
-                    )
-
-                    break
-
-                # ------------------------------------------------
-                # Converte resposta para JSON
-                # ------------------------------------------------
+                params = {
+                    "dataInicial": f"01/01/{ano}",
+                    "dataFinal": f"31/12/{ano}",
+                    "codigoModalidadeContratacao": codigo_modalidade,
+                    "cnpjOrgao": CNPJ_ORGAO,
+                    "pagina": pagina,
+                    "tamanhoPagina": TAMANHO_PAGINA
+                }
 
                 try:
 
-                    dados = resposta.json()
-
-                except ValueError:
-
                     print(
-                        "❌ A resposta da API não é um JSON válido."
+                        f"   📡 Página {pagina}..."
+                    )
+
+                    resposta = requests.get(
+                        url,
+                        params=params,
+                        timeout=TIMEOUT
                     )
 
                     print(
-                        resposta.text[:2000]
+                        f"      HTTP {resposta.status_code}"
+                    )
+
+                    # ------------------------------------------------
+                    # ERRO DA API
+                    # ------------------------------------------------
+
+                    if resposta.status_code != 200:
+
+                        print(
+                            "      ❌ Erro retornado pelo PNCP:"
+                        )
+
+                        print(
+                            resposta.text[:1000]
+                        )
+
+                        break
+
+                    # ------------------------------------------------
+                    # JSON
+                    # ------------------------------------------------
+
+                    try:
+
+                        dados = resposta.json()
+
+                    except ValueError:
+
+                        print(
+                            "      ❌ Resposta não é JSON válido."
+                        )
+
+                        break
+
+                    # ------------------------------------------------
+                    # REGISTROS
+                    # ------------------------------------------------
+
+                    registros = dados.get(
+                        "data",
+                        []
+                    )
+
+                    print(
+                        f"      📄 Registros: "
+                        f"{len(registros)}"
+                    )
+
+                    if not registros:
+
+                        break
+
+                    # Adiciona os registros
+                    todas_licitacoes.extend(
+                        registros
+                    )
+
+                    # ------------------------------------------------
+                    # FIM DA PAGINAÇÃO
+                    # ------------------------------------------------
+
+                    if len(registros) < TAMANHO_PAGINA:
+
+                        break
+
+                    pagina += 1
+
+                    time.sleep(0.5)
+
+                except requests.exceptions.Timeout:
+
+                    print(
+                        "      ❌ Timeout na consulta."
                     )
 
                     break
 
-                # ------------------------------------------------
-                # Obtém registros
-                # ------------------------------------------------
-
-                registros = dados.get("data", [])
-
-                print(
-                    f"   📄 Registros encontrados: "
-                    f"{len(registros)}"
-                )
-
-                # ------------------------------------------------
-                # Não existem mais registros
-                # ------------------------------------------------
-
-                if not registros:
+                except requests.exceptions.ConnectionError as erro:
 
                     print(
-                        f"   ✅ Fim do ano {ano}."
+                        f"      ❌ Erro de conexão: {erro}"
                     )
 
                     break
 
-                # ------------------------------------------------
-                # Adiciona registros
-                # ------------------------------------------------
-
-                todas_licitacoes.extend(registros)
-
-                # ------------------------------------------------
-                # Se veio menos que o limite, acabou
-                # ------------------------------------------------
-
-                if len(registros) < TAMANHO_PAGINA:
+                except requests.exceptions.RequestException as erro:
 
                     print(
-                        f"   ✅ Última página do ano {ano}."
+                        f"      ❌ Erro HTTP: {erro}"
                     )
 
                     break
 
-                pagina += 1
+                except Exception as erro:
 
-                # Pequena pausa para não sobrecarregar a API
-                time.sleep(0.5)
+                    print(
+                        f"      ❌ Erro inesperado: {erro}"
+                    )
 
-            except requests.exceptions.Timeout:
+                    break
 
-                print(
-                    "❌ A requisição demorou demais (timeout)."
-                )
-
-                break
-
-            except requests.exceptions.ConnectionError as erro:
-
-                print(
-                    f"❌ Erro de conexão: {erro}"
-                )
-
-                break
-
-            except requests.exceptions.RequestException as erro:
-
-                print(
-                    f"❌ Erro na requisição: {erro}"
-                )
-
-                break
-
-            except Exception as erro:
-
-                print(
-                    f"❌ Erro inesperado: {erro}"
-                )
-
-                break
+            # Pequena pausa entre modalidades
+            time.sleep(0.3)
 
     print()
     print("=" * 60)
     print(
-        f"📊 TOTAL DE REGISTROS: "
+        f"📊 TOTAL BRUTO DE REGISTROS: "
         f"{len(todas_licitacoes)}"
     )
     print("=" * 60)
@@ -190,7 +299,7 @@ def extrair_dados_pncp():
 
 
 # ============================================================
-# SALVA OS DADOS EM PARQUET
+# SALVAR PARQUET
 # ============================================================
 
 def salvar_dados(lista_compras):
@@ -200,60 +309,77 @@ def salvar_dados(lista_compras):
         exist_ok=True
     )
 
-    # --------------------------------------------------------
-    # Não cria um Parquet "falso" vazio silenciosamente
-    # --------------------------------------------------------
-
     if not lista_compras:
 
         print()
         print(
-            "⚠️ Nenhuma licitação foi encontrada."
+            "⚠️ Nenhum registro foi encontrado."
         )
 
         print(
-            "⚠️ O arquivo Parquet NÃO será sobrescrito."
+            "⚠️ O arquivo Parquet existente NÃO será sobrescrito."
         )
 
         return False
 
     # --------------------------------------------------------
-    # Converte para DataFrame
+    # DataFrame
     # --------------------------------------------------------
 
-    df = pd.DataFrame(lista_compras)
+    df = pd.DataFrame(
+        lista_compras
+    )
 
     print()
     print(
-        f"📊 DataFrame criado com "
-        f"{len(df)} registros."
+        f"📊 DataFrame criado: "
+        f"{len(df)} registros"
     )
+
+    # --------------------------------------------------------
+    # Remove duplicidades
+    # --------------------------------------------------------
+
+    quantidade_antes = len(df)
+
+    colunas_identificacao = [
+        coluna
+        for coluna in [
+            "numeroControlePNCP",
+            "numeroControlePncp",
+            "numeroCompra",
+            "anoCompra"
+        ]
+        if coluna in df.columns
+    ]
+
+    if colunas_identificacao:
+
+        df = df.drop_duplicates(
+            subset=colunas_identificacao
+        )
+
+    else:
+
+        df = df.drop_duplicates()
+
+    quantidade_depois = len(df)
 
     print(
-        f"📋 Quantidade de colunas: "
-        f"{len(df.columns)}"
+        f"🧹 Duplicidades removidas: "
+        f"{quantidade_antes - quantidade_depois}"
     )
 
     # --------------------------------------------------------
-    # Mostra as colunas encontradas
-    # --------------------------------------------------------
-
-    print()
-    print("📋 Colunas encontradas:")
-
-    for coluna in df.columns:
-
-        print(f"   - {coluna}")
-
-    # --------------------------------------------------------
-    # Salva Parquet
+    # Salva
     # --------------------------------------------------------
 
     try:
 
         df.to_parquet(
             ARQUIVO_SAIDA,
-            index=False
+            index=False,
+            engine="pyarrow"
         )
 
     except Exception as erro:
@@ -267,26 +393,40 @@ def salvar_dados(lista_compras):
 
     print()
     print(
-        f"✅ Arquivo salvo com sucesso:"
+        "✅ PARQUET SALVO COM SUCESSO"
     )
 
     print(
-        f"   {ARQUIVO_SAIDA}"
+        f"📁 Arquivo: {ARQUIVO_SAIDA}"
     )
 
     print(
-        f"   Registros: {len(df)}"
+        f"📊 Registros: {len(df)}"
     )
 
     print(
-        f"   Tamanho: {ARQUIVO_SAIDA.stat().st_size:,} bytes"
+        f"📋 Colunas: {len(df.columns)}"
     )
+
+    print(
+        f"💾 Tamanho: "
+        f"{ARQUIVO_SAIDA.stat().st_size:,} bytes"
+    )
+
+    print()
+    print("📋 Colunas encontradas:")
+
+    for coluna in df.columns:
+
+        print(
+            f"   - {coluna}"
+        )
 
     return True
 
 
 # ============================================================
-# EXECUÇÃO
+# EXECUÇÃO PRINCIPAL
 # ============================================================
 
 if __name__ == "__main__":
@@ -299,18 +439,20 @@ if __name__ == "__main__":
 
     dados = extrair_dados_pncp()
 
-    sucesso = salvar_dados(dados)
+    sucesso = salvar_dados(
+        dados
+    )
 
     print()
 
     if sucesso:
 
         print(
-            "🎉 Processo concluído com sucesso!"
+            "🎉 PROCESSO CONCLUÍDO COM SUCESSO!"
         )
 
     else:
 
         print(
-            "⚠️ Processo terminou sem gerar novos dados."
+            "⚠️ PROCESSO TERMINOU SEM NOVOS DADOS."
         )
