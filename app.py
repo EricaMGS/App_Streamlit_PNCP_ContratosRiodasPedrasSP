@@ -26,11 +26,11 @@ if st.sidebar.button("Gerar Relatório"):
     d_inicio_str = data_inicio.strftime("%Y%m%d")
     d_fim_str = data_fim.strftime("%Y%m%d")
 
-    # Endpoint correto com o sufixo '/publicacao'
     url = "https://pncp.gov.br/api/consulta/v1/contratacoes/publicacao"
 
+    # CORREÇÃO AQUI: O parâmetro correto na documentação da API é 'cnpj' (e não 'cnpjOrgao')
     params = {
-        "cnpjOrgao": cnpj_prefeitura,
+        "cnpj": cnpj_prefeitura,
         "dataInicial": d_inicio_str,
         "dataFinal": d_fim_str,
         "pagina": 1,
@@ -41,7 +41,7 @@ if st.sidebar.button("Gerar Relatório"):
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,"
             " like Gecko) Chrome/120.0.0.0 Safari/537.36"
         ),
-        "Accept": "application/json",
+        "Accept": "*/*", # Aceitar qualquer tipo de retorno 
     }
 
     try:
@@ -49,15 +49,22 @@ if st.sidebar.button("Gerar Relatório"):
 
       if response.status_code == 200:
         dados = response.json()
-        lista_contratacoes = (
-            dados if isinstance(dados, list) else dados.get("items", [])
-        )
+        
+        # O endpoint /publicacao do PNCP costuma retornar os dados dentro da chave 'data'
+        if "data" in dados:
+            lista_contratacoes = dados["data"]
+        elif "items" in dados:
+            lista_contratacoes = dados["items"]
+        elif isinstance(dados, list):
+            lista_contratacoes = dados
+        else:
+            lista_contratacoes = []
 
         df = pd.DataFrame(lista_contratacoes)
 
         if not df.empty:
           st.success(
-              f"Sucesso! Encontrados {len(df)} registros para Rio das"
+              f"Sucesso! Encontrados {len(df)} registros (Página 1) para Rio das"
               " Pedras/SP."
           )
           st.dataframe(df)
@@ -76,7 +83,8 @@ if st.sidebar.button("Gerar Relatório"):
               "Nenhum contrato encontrado no intervalo de datas selecionado."
           )
       else:
-        st.error(f"Erro na API do PNCP (Código: {response.status_code})")
+        # Se falhar novamente, agora ele imprimirá o motivo exato retornado pela API
+        st.error(f"Erro na API do PNCP (Código: {response.status_code}) - Detalhes: {response.text}")
     except requests.exceptions.Timeout:
       st.error(
           "O servidor do PNCP demorou muito para responder. Tente novamente"
