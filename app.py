@@ -17,9 +17,9 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-st.title("🏛️ Portal de Transparência - Rio das Pedras/SP")
+st.title("🏛️ Contratações Rio das Pedras/SP")
 st.markdown(
-    "Consulta integrada de Editais, Atas e Contratos direto do PNCP."
+    "Consulta integrada de Editais, Atas e Contratos direto do Portal Nacional de Contratações Públicas (PNCP)."
 )
 
 # --- BARRA LATERAL DE CONFIGURAÇÕES ---
