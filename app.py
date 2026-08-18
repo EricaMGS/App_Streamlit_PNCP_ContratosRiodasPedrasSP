@@ -20,17 +20,13 @@ data_fim = st.sidebar.date_input(
 
 if st.sidebar.button("Gerar Relatório"):
   with st.spinner("Consultando API do PNCP..."):
-    # CNPJ da Prefeitura de Rio das Pedras/SP sem formatação
     cnpj_prefeitura = "44826840000183"
 
-    # Formato de data exigido pela API do PNCP: AAAAMMDD
     d_inicio_str = data_inicio.strftime("%Y%m%d")
     d_fim_str = data_fim.strftime("%Y%m%d")
 
-    # Endpoint oficial correto de contratações
     url = "https://pncp.gov.br/api/consulta/v1/contratacoes"
 
-    # Parâmetros passados via query string
     params = {
         "cnpjOrgao": cnpj_prefeitura,
         "dataInicial": d_inicio_str,
@@ -38,8 +34,18 @@ if st.sidebar.button("Gerar Relatório"):
         "pagina": 1,
     }
 
+    # Cabeçalho simulando um navegador para evitar bloqueio do servidor
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,"
+            " like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        ),
+        "Accept": "application/json",
+    }
+
     try:
-      response = requests.get(url, params=params)
+      # Adicionado timeout de 15 segundos para evitar travamentos
+      response = requests.get(url, params=params, headers=headers, timeout=15)
 
       if response.status_code == 200:
         dados = response.json()
@@ -56,7 +62,6 @@ if st.sidebar.button("Gerar Relatório"):
           )
           st.dataframe(df)
 
-          # Botão de Download
           csv = df.to_csv(index=False).encode("utf-8")
           st.download_button(
               label="📥 Baixar Relatório em CSV",
@@ -72,5 +77,10 @@ if st.sidebar.button("Gerar Relatório"):
           )
       else:
         st.error(f"Erro na API do PNCP (Código: {response.status_code})")
+    except requests.exceptions.Timeout:
+      st.error(
+          "O servidor do PNCP demorou muito para responder. Tente novamente"
+          " mais tarde."
+      )
     except Exception as e:
       st.error(f"Erro de conexão: {e}")
