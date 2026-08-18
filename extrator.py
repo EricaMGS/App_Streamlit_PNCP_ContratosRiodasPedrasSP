@@ -38,11 +38,18 @@ def extrair_dados_pncp():
     return todos_contratos
 
 def salvar_dados(lista_contratos):
-    if not lista_contratos:
-        return
+    # Cria a pasta 'dados' se ela não existir
     os.makedirs(DIRETORIO_DADOS, exist_ok=True)
-    df = pd.DataFrame(lista_contratos)
+    
+    # Prevenção contra o erro de DataFrame sem colunas do Parquet
+    if not lista_contratos:
+        # Cria um DataFrame vazio já com as colunas que o Streamlit espera encontrar
+        df = pd.DataFrame(columns=['id', 'dataAssinatura', 'valorInicial', 'nomeRazaoSocialFornecedor'])
+    else:
+        df = pd.DataFrame(lista_contratos)
+        
     df.to_parquet(ARQUIVO_SAIDA, index=False)
+    print("Arquivo salvo com sucesso.")
 
 if __name__ == "__main__":
     dados = extrair_dados_pncp()
