@@ -10,7 +10,9 @@ from pathlib import Path
 
 CNPJ_ORGAO = "44826840000183"
 
-URL_API = "https://pncp.gov.br/api/consulta/v1"
+URL_API = (
+    "https://pncp.gov.br/api/consulta/v1/contratacoes/publicacao"
+)
 
 DIRETORIO_DADOS = Path(__file__).parent / "dados"
 ARQUIVO_SAIDA = DIRETORIO_DADOS / "compras.parquet"
@@ -23,137 +25,94 @@ TIMEOUT = 60
 
 
 # ============================================================
-# BUSCAR MODALIDADES
+# MODALIDADES DO PNCP
+# ============================================================
+#
+# 1  = Leilão - Eletrônico
+# 2  = Diálogo Competitivo
+# 3  = Concurso
+# 4  = Concorrência - Eletrônica
+# 5  = Concorrência - Presencial
+# 6  = Pregão - Eletrônico
+# 7  = Pregão - Presencial
+# 8  = Dispensa de Licitação
+# 9  = Inexigibilidade
+# 10 = Manifestação de Interesse
+# 11 = Pré-qualificação
+# 12 = Credenciamento
+# 13 = Leilão - Presencial
+#
+# Fonte: Manual das APIs de Consulta do PNCP
 # ============================================================
 
-def buscar_modalidades():
-
-    url = f"{URL_API}/modalidades"
-
-    print()
-    print("=" * 60)
-    print("🔎 Buscando modalidades de contratação no PNCP")
-    print("=" * 60)
-
-    try:
-
-        resposta = requests.get(
-            url,
-            params={"statusAtivo": "true"},
-            timeout=TIMEOUT
-        )
-
-        print(
-            f"HTTP {resposta.status_code}"
-        )
-
-        if resposta.status_code != 200:
-
-            print("❌ Não foi possível obter as modalidades.")
-
-            print(
-                resposta.text[:2000]
-            )
-
-            return []
-
-        dados = resposta.json()
-
-        # Algumas APIs retornam diretamente uma lista,
-        # outras podem colocar a lista dentro de "data".
-        if isinstance(dados, list):
-
-            modalidades = dados
-
-        elif isinstance(dados, dict):
-
-            modalidades = dados.get("data", [])
-
-        else:
-
-            modalidades = []
-
-        if not modalidades:
-
-            print(
-                "❌ A API não retornou modalidades."
-            )
-
-            return []
-
-        print(
-            f"✅ {len(modalidades)} modalidades encontradas."
-        )
-
-        for modalidade in modalidades:
-
-            codigo = modalidade.get("id")
-            nome = modalidade.get("nome")
-
-            print(
-                f"   {codigo} - {nome}"
-            )
-
-        return modalidades
-
-    except requests.exceptions.RequestException as erro:
-
-        print(
-            f"❌ Erro de conexão ao buscar modalidades: {erro}"
-        )
-
-        return []
-
-    except Exception as erro:
-
-        print(
-            f"❌ Erro inesperado ao buscar modalidades: {erro}"
-        )
-
-        return []
+MODALIDADES = {
+    1: "Leilão - Eletrônico",
+    2: "Diálogo Competitivo",
+    3: "Concurso",
+    4: "Concorrência - Eletrônica",
+    5: "Concorrência - Presencial",
+    6: "Pregão - Eletrônico",
+    7: "Pregão - Presencial",
+    8: "Dispensa de Licitação",
+    9: "Inexigibilidade",
+    10: "Manifestação de Interesse",
+    11: "Pré-qualificação",
+    12: "Credenciamento",
+    13: "Leilão - Presencial",
+}
 
 
 # ============================================================
-# CONSULTAR CONTRATAÇÕES
+# EXTRATOR
 # ============================================================
 
 def extrair_dados_pncp():
 
     todas_licitacoes = []
 
-    modalidades = buscar_modalidades()
+    print()
+    print("=" * 70)
+    print("🏛️ EXTRATOR PNCP")
+    print("=" * 70)
 
-    if not modalidades:
+    print(
+        f"CNPJ: {CNPJ_ORGAO}"
+    )
 
-        print(
-            "❌ Nenhuma modalidade disponível."
-        )
+    print(
+        f"Anos: {ANOS}"
+    )
 
-        return []
+    print(
+        f"Modalidades: {len(MODALIDADES)}"
+    )
 
-    url = f"{URL_API}/contratacoes/publicacao"
+    # --------------------------------------------------------
+    # ANOS
+    # --------------------------------------------------------
 
     for ano in ANOS:
 
         print()
-        print("=" * 60)
-        print(f"📅 CONSULTANDO ANO {ano}")
-        print("=" * 60)
+        print("=" * 70)
+        print(
+            f"📅 CONSULTANDO ANO {ano}"
+        )
+        print("=" * 70)
 
-        for modalidade in modalidades:
+        # ----------------------------------------------------
+        # MODALIDADES
+        # ----------------------------------------------------
 
-            codigo_modalidade = modalidade.get("id")
-            nome_modalidade = modalidade.get("nome")
-
-            if codigo_modalidade is None:
-
-                continue
+        for codigo_modalidade, nome_modalidade in MODALIDADES.items():
 
             print()
             print(
-                f"🔎 Modalidade: "
-                f"{nome_modalidade} "
-                f"(código {codigo_modalidade})"
+                f"🔎 {nome_modalidade}"
+            )
+
+            print(
+                f"   Código: {codigo_modalidade}"
             )
 
             pagina = 1
@@ -161,12 +120,21 @@ def extrair_dados_pncp():
             while True:
 
                 params = {
-                    "dataInicial": f"01/01/{ano}",
-                    "dataFinal": f"31/12/{ano}",
-                    "codigoModalidadeContratacao": codigo_modalidade,
-                    "cnpjOrgao": CNPJ_ORGAO,
+                    # IMPORTANTE:
+                    # PNCP exige AAAAMMDD
+                    "dataInicial": f"{ano}0101",
+                    "dataFinal": f"{ano}1231",
+
+                    # Modalidade obrigatória
+                    "codigoModalidadeContratacao": (
+                        codigo_modalidade
+                    ),
+
+                    # O parâmetro correto é "cnpj"
+                    "cnpj": CNPJ_ORGAO,
+
                     "pagina": pagina,
-                    "tamanhoPagina": TAMANHO_PAGINA
+                    "tamanhoPagina": TAMANHO_PAGINA,
                 }
 
                 try:
@@ -176,9 +144,12 @@ def extrair_dados_pncp():
                     )
 
                     resposta = requests.get(
-                        url,
+                        URL_API,
                         params=params,
-                        timeout=TIMEOUT
+                        timeout=TIMEOUT,
+                        headers={
+                            "accept": "*/*"
+                        }
                     )
 
                     print(
@@ -186,17 +157,17 @@ def extrair_dados_pncp():
                     )
 
                     # ------------------------------------------------
-                    # ERRO DA API
+                    # ERRO HTTP
                     # ------------------------------------------------
 
                     if resposta.status_code != 200:
 
                         print(
-                            "      ❌ Erro retornado pelo PNCP:"
+                            "      ❌ Erro da API:"
                         )
 
                         print(
-                            resposta.text[:1000]
+                            resposta.text[:2000]
                         )
 
                         break
@@ -215,6 +186,10 @@ def extrair_dados_pncp():
                             "      ❌ Resposta não é JSON válido."
                         )
 
+                        print(
+                            resposta.text[:1000]
+                        )
+
                         break
 
                     # ------------------------------------------------
@@ -227,21 +202,28 @@ def extrair_dados_pncp():
                     )
 
                     print(
-                        f"      📄 Registros: "
+                        f"      📄 Registros encontrados: "
                         f"{len(registros)}"
                     )
+
+                    # ------------------------------------------------
+                    # SEM MAIS REGISTROS
+                    # ------------------------------------------------
 
                     if not registros:
 
                         break
 
-                    # Adiciona os registros
+                    # ------------------------------------------------
+                    # ADICIONA OS REGISTROS
+                    # ------------------------------------------------
+
                     todas_licitacoes.extend(
                         registros
                     )
 
                     # ------------------------------------------------
-                    # FIM DA PAGINAÇÃO
+                    # PAGINAÇÃO
                     # ------------------------------------------------
 
                     if len(registros) < TAMANHO_PAGINA:
@@ -255,7 +237,7 @@ def extrair_dados_pncp():
                 except requests.exceptions.Timeout:
 
                     print(
-                        "      ❌ Timeout na consulta."
+                        "      ❌ Timeout."
                     )
 
                     break
@@ -271,7 +253,7 @@ def extrair_dados_pncp():
                 except requests.exceptions.RequestException as erro:
 
                     print(
-                        f"      ❌ Erro HTTP: {erro}"
+                        f"      ❌ Erro na requisição: {erro}"
                     )
 
                     break
@@ -284,16 +266,22 @@ def extrair_dados_pncp():
 
                     break
 
-            # Pequena pausa entre modalidades
+            # Pausa entre modalidades
             time.sleep(0.3)
 
+    # ========================================================
+    # RESULTADO FINAL
+    # ========================================================
+
     print()
-    print("=" * 60)
+    print("=" * 70)
+
     print(
         f"📊 TOTAL BRUTO DE REGISTROS: "
         f"{len(todas_licitacoes)}"
     )
-    print("=" * 60)
+
+    print("=" * 70)
 
     return todas_licitacoes
 
@@ -309,6 +297,10 @@ def salvar_dados(lista_compras):
         exist_ok=True
     )
 
+    # --------------------------------------------------------
+    # NÃO SOBRESCREVE COM ARQUIVO VAZIO
+    # --------------------------------------------------------
+
     if not lista_compras:
 
         print()
@@ -317,13 +309,13 @@ def salvar_dados(lista_compras):
         )
 
         print(
-            "⚠️ O arquivo Parquet existente NÃO será sobrescrito."
+            "⚠️ O Parquet existente NÃO será sobrescrito."
         )
 
         return False
 
     # --------------------------------------------------------
-    # DataFrame
+    # DATAFRAME
     # --------------------------------------------------------
 
     df = pd.DataFrame(
@@ -332,31 +324,25 @@ def salvar_dados(lista_compras):
 
     print()
     print(
-        f"📊 DataFrame criado: "
-        f"{len(df)} registros"
+        f"📊 DataFrame criado com "
+        f"{len(df)} registros."
+    )
+
+    print(
+        f"📋 Total de colunas: "
+        f"{len(df.columns)}"
     )
 
     # --------------------------------------------------------
-    # Remove duplicidades
+    # REMOVE DUPLICADOS
     # --------------------------------------------------------
 
     quantidade_antes = len(df)
 
-    colunas_identificacao = [
-        coluna
-        for coluna in [
-            "numeroControlePNCP",
-            "numeroControlePncp",
-            "numeroCompra",
-            "anoCompra"
-        ]
-        if coluna in df.columns
-    ]
-
-    if colunas_identificacao:
+    if "numeroControlePNCP" in df.columns:
 
         df = df.drop_duplicates(
-            subset=colunas_identificacao
+            subset=["numeroControlePNCP"]
         )
 
     else:
@@ -371,7 +357,7 @@ def salvar_dados(lista_compras):
     )
 
     # --------------------------------------------------------
-    # Salva
+    # SALVA
     # --------------------------------------------------------
 
     try:
@@ -386,15 +372,19 @@ def salvar_dados(lista_compras):
 
         print()
         print(
-            f"❌ Erro ao salvar Parquet: {erro}"
+            f"❌ Erro ao salvar Parquet:"
+        )
+
+        print(
+            erro
         )
 
         return False
 
     print()
-    print(
-        "✅ PARQUET SALVO COM SUCESSO"
-    )
+    print("=" * 70)
+    print("✅ PARQUET SALVO COM SUCESSO")
+    print("=" * 70)
 
     print(
         f"📁 Arquivo: {ARQUIVO_SAIDA}"
@@ -414,7 +404,7 @@ def salvar_dados(lista_compras):
     )
 
     print()
-    print("📋 Colunas encontradas:")
+    print("📋 COLUNAS ENCONTRADAS:")
 
     for coluna in df.columns:
 
@@ -426,16 +416,10 @@ def salvar_dados(lista_compras):
 
 
 # ============================================================
-# EXECUÇÃO PRINCIPAL
+# EXECUÇÃO
 # ============================================================
 
 if __name__ == "__main__":
-
-    print()
-    print("🏛️ EXTRATOR PNCP")
-    print(
-        f"CNPJ: {CNPJ_ORGAO}"
-    )
 
     dados = extrair_dados_pncp()
 
