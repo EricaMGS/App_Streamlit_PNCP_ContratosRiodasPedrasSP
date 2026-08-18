@@ -49,6 +49,7 @@ if st.sidebar.button("Gerar Relatório Consolidado"):
 
         all_data = []
         pagina = 1
+        erro_capturado = None
 
         while pagina <= 10:
             params = {
@@ -60,6 +61,7 @@ if st.sidebar.button("Gerar Relatório Consolidado"):
 
             try:
                 response = requests.get(url_escolhida, params=params, headers=headers, timeout=30)
+                
                 if response.status_code == 200:
                     lote = response.json()
                     lote = lote.get("data", lote.get("items", [])) if isinstance(lote, dict) else lote
@@ -70,8 +72,10 @@ if st.sidebar.button("Gerar Relatório Consolidado"):
                         break
                     pagina += 1
                 else:
+                    erro_capturado = f"Erro HTTP {response.status_code}: {response.text}"
                     break
-            except Exception:
+            except Exception as e:
+                erro_capturado = f"Erro de conexão: {str(e)}"
                 break
 
         if all_data:
@@ -129,6 +133,9 @@ if st.sidebar.button("Gerar Relatório Consolidado"):
                     st.download_button("📝 Baixar Relatório em Word (.docx)", buffer_word.getvalue(), 
                                        file_name=f"Relatorio_{tipo_consulta.replace(' ', '_')}_Rio_Das_Pedras.docx")
             else:
-                st.warning(f"Nenhum registro de '{tipo_consulta}' encontrado.")
+                st.warning(f"Nenhum registro de '{tipo_consulta}' retornado para o CNPJ e período informados.")
         else:
-            st.warning("Não foi possível carregar os dados ou o servidor do PNCP está instável.")
+            if erro_capturado:
+                st.error(f"Falha na comunicação com o PNCP. Detalhes técnicos: {erro_capturado}")
+            else:
+                st.warning("O servidor do PNCP retornou vazio ou está instável no momento. Tente novamente em instantes.")
