@@ -3,20 +3,81 @@ name: Atualizar Dados do PNCP
 on:
   schedule:
     - cron: '0 3 * * *'
+
   workflow_dispatch:
+
+# Permite que o workflow grave o compras.parquet
+# de volta no repositório
+permissions:
+  contents: write
 
 jobs:
   atualizar:
+
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
+
+      # -------------------------------------------------------
+      # Baixa o código do repositório
+      # -------------------------------------------------------
+      - name: Baixar código
+        uses: actions/checkout@v4
+
+      # -------------------------------------------------------
+      # Configura Python
+      # -------------------------------------------------------
+      - name: Configurar Python
+        uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-      - run: pip install -r requirements.txt
-      - run: python extrator.py
-      - run: |
-          git config --global user.name 'Bot de Atualizacao'
-          git config --global user.email 'bot@pncp.com'
-          git add dados/
-          git diff --quiet && git diff --staged --quiet || (git commit -m "Atualizacao dos dados do PNCP" && git push)
+
+      # -------------------------------------------------------
+      # Instala dependências
+      # -------------------------------------------------------
+      - name: Instalar dependências
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # -------------------------------------------------------
+      # Executa o extrator
+      # -------------------------------------------------------
+      - name: Extrair dados do PNCP
+        run: |
+          python extrator.py
+
+      # -------------------------------------------------------
+      # Verifica se o arquivo foi realmente criado
+      # -------------------------------------------------------
+      - name: Verificar arquivo Parquet
+        run: |
+          echo "Conteúdo da pasta dados:"
+          ls -lah dados/
+
+          echo ""
+          echo "Verificando compras.parquet..."
+
+          if [ ! -f "dados/compras.parquet" ]; then
+            echo "❌ ERRO: compras.parquet não foi criado."
+            exit 1
+          fi
+
+          echo "✅ compras.parquet encontrado."
+
+      # -------------------------------------------------------
+      # Envia o arquivo atualizado para o GitHub
+      # -------------------------------------------------------
+      - name: Salvar dados no GitHub
+        run: |
+          git config --global user.name "Bot de Atualizacao"
+          git config --global user.email "bot@pncp.com"
+
+          git add dados/compras.parquet
+
+          if git diff --cached --quiet; then
+            echo "ℹ️ Nenhuma alteração nos dados."
+          else
+            git commit -m "Atualizacao dos dados do PNCP"
+            git push
+          fi
