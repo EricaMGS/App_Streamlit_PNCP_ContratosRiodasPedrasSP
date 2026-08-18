@@ -4,7 +4,7 @@ import time
 import os
 from datetime import datetime
 
-CNPJ_ORGAO = "00000000000000" # Substitua pelo CNPJ real (apenas números)
+CNPJ_ORGAO = "44826840000183" 
 DATA_INICIAL = "20230101" 
 DATA_FINAL = datetime.now().strftime("%Y%m%d")
 
