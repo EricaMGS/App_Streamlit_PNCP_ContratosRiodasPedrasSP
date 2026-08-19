@@ -155,7 +155,7 @@ def consultar_pncp(url, params, max_tentativas=3):
     raise ultima_excecao
 
 # ============================================================
-# EXTRAIR REGISTROS
+# EXTRAIR REGISTROS E TRATAR DADOS ANINHADOS
 # ============================================================
 
 def extrair_registros(data):
@@ -166,6 +166,24 @@ def extrair_registros(data):
             if chave in data and isinstance(data[chave], list):
                 return data[chave]
     return []
+
+def tratar_dataframe(df):
+    """Transforma dicionários aninhados em colunas legíveis para exibição e exportação"""
+    if df.empty:
+        return df
+    
+    df_tratado = df.copy()
+    
+    # Converte colunas que são dicionários em strings legíveis ou extrai chaves principais
+    for col in df_tratado.columns:
+        sample = df_tratado[col].dropna()
+        if not sample.empty and isinstance(sample.iloc[0], dict):
+            # Extrai nomes úteis se existirem no dicionário
+            df_tratado[col] = df_tratado[col].apply(
+                lambda x: x.get('nome') or x.get('razaoSocial') or x.get('descricao') or str(x) if isinstance(x, dict) else str(x)
+            )
+            
+    return df_tratado
 
 # ============================================================
 # PAGINAÇÃO
@@ -188,19 +206,19 @@ def consultar_paginas(url, params, max_paginas=100):
     return todos_registros
 
 # ============================================================
-# EXTRATOR INTELIGENTE DE CAMPOS (SUPORTE A CONTRATOS, ATAS E EDITAIS)
+# EXTRATOR ROBUSTO DE CAMPOS
 # ============================================================
 
-def obter_campo_seguro(row, chaves):
+def obter_campo(row, chaves):
     for chave in chaves:
-        val = row.get(chave)
-        if pd.notna(val) and val != "" and val != "N/D":
-            if isinstance(val, dict):
-                # Tenta extrair nomes ou valores úteis de dicionários aninhados
-                for sub in ["nome", "razaoSocial", "descricao", "valor"]:
-                    if sub in val and pd.notna(val[sub]):
-                        return str(val[sub])
-            return str(val)
+        if chave in row:
+            val = row[chave]
+            if pd.notna(val) and val != "" and str(val).lower() != "nan":
+                if isinstance(val, dict):
+                    for sub in ["nome", "razaoSocial", "descricao", "valor"]:
+                        if sub in val and pd.notna(val[sub]):
+                            return str(val[sub])
+                return str(val)
     return "N/D"
 
 # ============================================================
@@ -245,11 +263,13 @@ if st.sidebar.button("🔎 Gerar Relatório", type="primary"):
             params["cnpj"] = CNPJ_RIO_DAS_PEDRAS
 
     try:
-        with st.spinner("🔄 Buscando dados no PNCP..."):
+        with st.spinner("🔄 Buscando e tratando dados no PNCP..."):
             registros = consultar_paginas(endpoint, params)
 
         if registros:
             df_temp = pd.DataFrame(registros)
+            df_temp = tratar_dataframe(df_temp)
+            
             if tipo_consulta == "Contratos":
                 possiveis_colunas = ["cnpjOrgao", "orgaoEntidade", "orgao", "unidadeOrgao"]
                 encontrou_cnpj = False
@@ -261,8 +281,6 @@ if st.sidebar.button("🔎 Gerar Relatório", type="primary"):
                             df_temp = df_temp[mask]
                             encontrou_cnpj = True
                             break
-                if not encontrou_cnpj:
-                    st.warning("⚠️ O PNCP retornou registros, mas sem coluna CNPJ padronizada.")
 
             st.session_state.df_resultado = df_temp
             if df_temp.empty:
@@ -284,12 +302,14 @@ if st.sidebar.button("🔎 Gerar Relatório", type="primary"):
         st.error(f"❌ Erro: {str(e)}")
 
 # ============================================================
-# EXIBIÇÃO PERSISTENTE
+# EXIBIÇÃO PERSISTENTE NO DASHBOARD
 # ============================================================
 
 if st.session_state.df_resultado is not None and not st.session_state.df_resultado.empty:
     df = st.session_state.df_resultado
     st.success(f"📊 Exibindo {len(df)} registros para Rio das Pedras/SP.")
+    
+    # Exibição interativa limpa na tela
     st.dataframe(df, use_container_width=True, hide_index=True)
 
     st.markdown("### 📥 Opções de Exportação")
@@ -324,18 +344,18 @@ if st.session_state.df_resultado is not None and not st.session_state.df_resulta
         p_reg = doc.add_paragraph()
         p_reg.add_run(f"Item #{idx + 1}\n").bold = True
         
-        # Mapeamento inteligente que funciona para Contratos, Atas e Editais
-        processo = obter_campo_seguro(row, ['processo', 'numeroProcesso', 'numeroControlePncpCompra'])
-        fornecedor = obter_campo_seguro(row, ['nomeRazaoSocialFornecedor', 'fornecedor', 'nomeFornecedor', 'razaoSocialFornecedor'])
-        objeto = obter_campo_seguro(row, ['objetoContrato', 'objetoCompra', 'objetoAta', 'descricaoObjeto'])
-        valor = obter_campo_seguro(row, ['valorGlobal', 'valorTotalEstimado', 'valorHomologado', 'valorAta', 'valorTotal'])
+        # Busca robusta em múltiplos nomes possíveis de colunas (Atas, Contratos e Editais)
+        processo = obter_campo(row, ['processo', 'numeroProcesso', 'numeroControlePncpCompra', 'numeroAtaRegistroPreco'])
+        fornecedor = obter_campo(row, ['nomeRazaoSocialFornecedor', 'fornecedor', 'nomeFornecedor', 'razaoSocialFornecedor', 'fornecedorDto'])
+        objeto = obter_campo(row, ['objetoContrato', 'objetoCompra', 'objetoAta', 'descricaoObjeto', 'objeto'])
+        valor = obter_campo(row, ['valorGlobal', 'valorTotalEstimado', 'valorHomologado', 'valorAta', 'valorTotal', 'valorEstimado'])
         
         try:
             valor_fmt = f"R$ {float(valor):,.2f}" if valor != "N/D" else "N/D"
         except:
-            valor_fmt = valor
+            valor_fmt = str(valor)
 
-        p_reg.add_run(f"• Processo: {processo}\n")
+        p_reg.add_run(f"• Processo/Controle: {processo}\n")
         p_reg.add_run(f"• Fornecedor: {fornecedor}\n")
         p_reg.add_run(f"• Valor: {valor_fmt}\n")
         p_reg.add_run(f"• Objeto: {objeto}\n")
@@ -367,17 +387,17 @@ if st.session_state.df_resultado is not None and not st.session_state.df_resulta
     pdf.set_font("Arial", size=9)
 
     for idx, row in df.head(30).iterrows():
-        processo = obter_campo_seguro(row, ['processo', 'numeroProcesso', 'numeroControlePncpCompra'])
-        fornecedor = obter_campo_seguro(row, ['nomeRazaoSocialFornecedor', 'fornecedor', 'nomeFornecedor', 'razaoSocialFornecedor'])
-        objeto = obter_campo_seguro(row, ['objetoContrato', 'objetoCompra', 'objetoAta', 'descricaoObjeto'])
-        valor = obter_campo_seguro(row, ['valorGlobal', 'valorTotalEstimado', 'valorHomologado', 'valorAta', 'valorTotal'])
+        processo = obter_campo(row, ['processo', 'numeroProcesso', 'numeroControlePncpCompra', 'numeroAtaRegistroPreco'])
+        fornecedor = obter_campo(row, ['nomeRazaoSocialFornecedor', 'fornecedor', 'nomeFornecedor', 'razaoSocialFornecedor', 'fornecedorDto'])
+        objeto = obter_campo(row, ['objetoContrato', 'objetoCompra', 'objetoAta', 'descricaoObjeto', 'objeto'])
+        valor = obter_campo(row, ['valorGlobal', 'valorTotalEstimado', 'valorHomologado', 'valorAta', 'valorTotal', 'valorEstimado'])
         
         try:
             valor_fmt = f"R$ {float(valor):,.2f}" if valor != "N/D" else "N/D"
         except:
-            valor_fmt = valor
+            valor_fmt = str(valor)
 
-        bloco = f"[{idx+1}] Proc: {processo} | Fornecedor: {fornecedor} | Valor: {valor_fmt}\nObjeto: {objeto}"
+        bloco = f"[{idx+1}] Proc/Ref: {processo} | Fornecedor: {fornecedor} | Valor: {valor_fmt}\nObjeto: {objeto}"
         
         bloco_limpo = bloco.encode("latin-1", "replace").decode("latin-1")
         pdf.multi_cell(0, 5, txt=bloco_limpo)
