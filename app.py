@@ -168,10 +168,8 @@ def extrair_registros(data):
     return []
 
 def tratar_dataframe(df):
-    """Transforma dicionários aninhados em colunas legíveis para exibição e exportação"""
     if df.empty:
         return df
-    
     df_tratado = df.copy()
     for col in df_tratado.columns:
         sample = df_tratado[col].dropna()
@@ -202,34 +200,39 @@ def consultar_paginas(url, params, max_paginas=100):
     return todos_registros
 
 # ============================================================
-# EXTRATOR ROBUSTO DE CAMPOS ESPECÍFICOS POR TIPO
+# EXTRATOR DE CAMPOS (ADAPTADO PARA CADA TIPO)
 # ============================================================
 
 def obter_dados_registro(row, tipo):
-    """Extrai com precisão os dados corretos dependendo se é Contrato, Ata ou Edital"""
     if tipo == "Atas de Registro de Preços":
         processo = row.get('numeroAtaRegistroPreco', row.get('numeroControlePNCPCompra', 'N/D'))
-        fornecedor = row.get('usuario', 'Prefeitura Municipal')
+        vigencia = f"Início: {row.get('vigenciaInicio', 'N/D')} | Fim: {row.get('vigenciaFim', 'N/D')}"
         objeto = row.get('objetoContratacao', 'N/D')
-        valor = row.get('valorGlobal', row.get('valorTotalEstimado', row.get('valorHomologado', 'Não informado')))
+        info_extra = f"Vigência: {vigencia}"
     elif tipo == "Contratos":
         processo = row.get('processo', row.get('numeroControlePNCPCompra', 'N/D'))
         fornecedor = row.get('nomeRazaoSocialFornecedor', 'N/D')
         objeto = row.get('objetoContrato', 'N/D')
         valor = row.get('valorGlobal', row.get('valorInicial', 0))
+        try:
+            val_float = float(valor)
+            valor_fmt = f"R$ {val_float:,.2f}"
+        except:
+            valor_fmt = str(valor)
+        info_extra = f"Fornecedor: {fornecedor} | Valor: {valor_fmt}"
     else: # Editais
         processo = row.get('processo', row.get('numeroControlePNCP', 'N/D'))
         fornecedor = row.get('usuarioNome', 'N/D')
         objeto = row.get('objetoCompra', 'N/D')
         valor = row.get('valorTotalHomologado', row.get('valorTotalEstimado', 0))
-    
-    try:
-        val_float = float(valor)
-        valor_fmt = f"R$ {val_float:,.2f}"
-    except:
-        valor_fmt = str(valor)
+        try:
+            val_float = float(valor)
+            valor_fmt = f"R$ {val_float:,.2f}"
+        except:
+            valor_fmt = str(valor)
+        info_extra = f"Responsável: {fornecedor} | Valor Estimado/Homologado: {valor_fmt}"
 
-    return str(processo), str(fornecedor), valor_fmt, str(objeto)
+    return str(processo), info_extra, str(objeto)
 
 # ============================================================
 # BOTÃO CONSULTAR
@@ -353,11 +356,10 @@ if st.session_state.df_resultado is not None and not st.session_state.df_resulta
         p_reg = doc.add_paragraph()
         p_reg.add_run(f"Item #{idx + 1}\n").bold = True
         
-        processo, fornecedor, valor_fmt, objeto = obter_dados_registro(row, tipo_consulta)
+        processo, info_extra, objeto = obter_dados_registro(row, tipo_consulta)
 
-        p_reg.add_run(f"• Identificação/Processo: {processo}\n")
-        p_reg.add_run(f"• Fornecedor/Origem: {fornecedor}\n")
-        p_reg.add_run(f"• Valor: {valor_fmt}\n")
+        p_reg.add_run(f"• Identificação/Ref: {processo}\n")
+        p_reg.add_run(f"• Detalhes: {info_extra}\n")
         p_reg.add_run(f"• Objeto: {objeto}\n")
         
         doc.add_paragraph("-" * 40)
@@ -387,9 +389,9 @@ if st.session_state.df_resultado is not None and not st.session_state.df_resulta
     pdf.set_font("Arial", size=9)
 
     for idx, row in df.head(30).iterrows():
-        processo, fornecedor, valor_fmt, objeto = obter_dados_registro(row, tipo_consulta)
+        processo, info_extra, objeto = obter_dados_registro(row, tipo_consulta)
 
-        bloco = f"[{idx+1}] Ref: {processo} | Origem: {fornecedor} | Valor: {valor_fmt}\nObjeto: {objeto}"
+        bloco = f"[{idx+1}] Ref: {processo} | {info_extra}\nObjeto: {objeto}"
         
         bloco_limpo = bloco.encode("latin-1", "replace").decode("latin-1")
         pdf.multi_cell(0, 5, txt=bloco_limpo)
