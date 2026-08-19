@@ -200,17 +200,19 @@ def consultar_paginas(url, params, max_paginas=100):
     return todos_registros
 
 # ============================================================
-# EXTRATOR DE CAMPOS (ADAPTADO PARA CADA TIPO)
+# EXTRATOR DE CAMPOS (COM ID PNCP INCLUÍDO)
 # ============================================================
 
 def obter_dados_registro(row, tipo):
+    id_pncp = row.get('numeroControlePNCP', row.get('numeroControlePNCPAta', row.get('numeroControlePNCPCompra', 'N/D')))
+    
     if tipo == "Atas de Registro de Preços":
-        processo = row.get('numeroAtaRegistroPreco', row.get('numeroControlePNCPCompra', 'N/D'))
+        processo = row.get('numeroAtaRegistroPreco', 'N/D')
         vigencia = f"Início: {row.get('vigenciaInicio', 'N/D')} | Fim: {row.get('vigenciaFim', 'N/D')}"
         objeto = row.get('objetoContratacao', 'N/D')
         info_extra = f"Vigência: {vigencia}"
     elif tipo == "Contratos":
-        processo = row.get('processo', row.get('numeroControlePNCPCompra', 'N/D'))
+        processo = row.get('processo', 'N/D')
         fornecedor = row.get('nomeRazaoSocialFornecedor', 'N/D')
         objeto = row.get('objetoContrato', 'N/D')
         valor = row.get('valorGlobal', row.get('valorInicial', 0))
@@ -221,7 +223,7 @@ def obter_dados_registro(row, tipo):
             valor_fmt = str(valor)
         info_extra = f"Fornecedor: {fornecedor} | Valor: {valor_fmt}"
     else: # Editais
-        processo = row.get('processo', row.get('numeroControlePNCP', 'N/D'))
+        processo = row.get('processo', 'N/D')
         fornecedor = row.get('usuarioNome', 'N/D')
         objeto = row.get('objetoCompra', 'N/D')
         valor = row.get('valorTotalHomologado', row.get('valorTotalEstimado', 0))
@@ -230,9 +232,9 @@ def obter_dados_registro(row, tipo):
             valor_fmt = f"R$ {val_float:,.2f}"
         except:
             valor_fmt = str(valor)
-        info_extra = f"Responsável: {fornecedor} | Valor Estimado/Homologado: {valor_fmt}"
+        info_extra = f"Responsável: {fornecedor} | Valor: {valor_fmt}"
 
-    return str(processo), info_extra, str(objeto)
+    return str(id_pncp), str(processo), info_extra, str(objeto)
 
 # ============================================================
 # BOTÃO CONSULTAR
@@ -356,9 +358,10 @@ if st.session_state.df_resultado is not None and not st.session_state.df_resulta
         p_reg = doc.add_paragraph()
         p_reg.add_run(f"Item #{idx + 1}\n").bold = True
         
-        processo, info_extra, objeto = obter_dados_registro(row, tipo_consulta)
+        id_pncp, processo, info_extra, objeto = obter_dados_registro(row, tipo_consulta)
 
-        p_reg.add_run(f"• Identificação/Ref: {processo}\n")
+        p_reg.add_run(f"• ID Contratação PNCP: {id_pncp}\n")
+        p_reg.add_run(f"• Processo/Ref: {processo}\n")
         p_reg.add_run(f"• Detalhes: {info_extra}\n")
         p_reg.add_run(f"• Objeto: {objeto}\n")
         
@@ -389,9 +392,9 @@ if st.session_state.df_resultado is not None and not st.session_state.df_resulta
     pdf.set_font("Arial", size=9)
 
     for idx, row in df.head(30).iterrows():
-        processo, info_extra, objeto = obter_dados_registro(row, tipo_consulta)
+        id_pncp, processo, info_extra, objeto = obter_dados_registro(row, tipo_consulta)
 
-        bloco = f"[{idx+1}] Ref: {processo} | {info_extra}\nObjeto: {objeto}"
+        bloco = f"[{idx+1}] ID PNCP: {id_pncp} | Proc: {processo} | {info_extra}\nObjeto: {objeto}"
         
         bloco_limpo = bloco.encode("latin-1", "replace").decode("latin-1")
         pdf.multi_cell(0, 5, txt=bloco_limpo)
