@@ -188,6 +188,22 @@ def consultar_paginas(url, params, max_paginas=100):
     return todos_registros
 
 # ============================================================
+# EXTRATOR INTELIGENTE DE CAMPOS (SUPORTE A CONTRATOS, ATAS E EDITAIS)
+# ============================================================
+
+def obter_campo_seguro(row, chaves):
+    for chave in chaves:
+        val = row.get(chave)
+        if pd.notna(val) and val != "" and val != "N/D":
+            if isinstance(val, dict):
+                # Tenta extrair nomes ou valores úteis de dicionários aninhados
+                for sub in ["nome", "razaoSocial", "descricao", "valor"]:
+                    if sub in val and pd.notna(val[sub]):
+                        return str(val[sub])
+            return str(val)
+    return "N/D"
+
+# ============================================================
 # BOTÃO CONSULTAR
 # ============================================================
 
@@ -308,22 +324,22 @@ if st.session_state.df_resultado is not None and not st.session_state.df_resulta
         p_reg = doc.add_paragraph()
         p_reg.add_run(f"Item #{idx + 1}\n").bold = True
         
-        processo = row.get('processo', 'N/D')
-        fornecedor = row.get('nomeRazaoSocialFornecedor', 'N/D')
-        objeto = row.get('objetoContrato', row.get('objetoCompra', 'N/D'))
-        valor = row.get('valorGlobal', row.get('valorTotalEstimado', 0))
+        # Mapeamento inteligente que funciona para Contratos, Atas e Editais
+        processo = obter_campo_seguro(row, ['processo', 'numeroProcesso', 'numeroControlePncpCompra'])
+        fornecedor = obter_campo_seguro(row, ['nomeRazaoSocialFornecedor', 'fornecedor', 'nomeFornecedor', 'razaoSocialFornecedor'])
+        objeto = obter_campo_seguro(row, ['objetoContrato', 'objetoCompra', 'objetoAta', 'descricaoObjeto'])
+        valor = obter_campo_seguro(row, ['valorGlobal', 'valorTotalEstimado', 'valorHomologado', 'valorAta', 'valorTotal'])
         
         try:
-            valor_fmt = f"R$ {float(valor):,.2f}" if pd.notna(valor) else "N/D"
+            valor_fmt = f"R$ {float(valor):,.2f}" if valor != "N/D" else "N/D"
         except:
-            valor_fmt = str(valor)
+            valor_fmt = valor
 
         p_reg.add_run(f"• Processo: {processo}\n")
         p_reg.add_run(f"• Fornecedor: {fornecedor}\n")
         p_reg.add_run(f"• Valor: {valor_fmt}\n")
         p_reg.add_run(f"• Objeto: {objeto}\n")
         
-        # Correção aplicada aqui (usando doc.add_paragraph em vez de p_reg.add_paragraph)
         doc.add_paragraph("-" * 40)
 
     buffer_docx = io.BytesIO()
@@ -351,15 +367,15 @@ if st.session_state.df_resultado is not None and not st.session_state.df_resulta
     pdf.set_font("Arial", size=9)
 
     for idx, row in df.head(30).iterrows():
-        processo = str(row.get('processo', 'N/D'))
-        fornecedor = str(row.get('nomeRazaoSocialFornecedor', 'N/D'))
-        objeto = str(row.get('objetoContrato', row.get('objetoCompra', 'N/D')))
-        valor = row.get('valorGlobal', row.get('valorTotalEstimado', 0))
+        processo = obter_campo_seguro(row, ['processo', 'numeroProcesso', 'numeroControlePncpCompra'])
+        fornecedor = obter_campo_seguro(row, ['nomeRazaoSocialFornecedor', 'fornecedor', 'nomeFornecedor', 'razaoSocialFornecedor'])
+        objeto = obter_campo_seguro(row, ['objetoContrato', 'objetoCompra', 'objetoAta', 'descricaoObjeto'])
+        valor = obter_campo_seguro(row, ['valorGlobal', 'valorTotalEstimado', 'valorHomologado', 'valorAta', 'valorTotal'])
         
         try:
-            valor_fmt = f"R$ {float(valor):,.2f}" if pd.notna(valor) else "N/D"
+            valor_fmt = f"R$ {float(valor):,.2f}" if valor != "N/D" else "N/D"
         except:
-            valor_fmt = str(valor)
+            valor_fmt = valor
 
         bloco = f"[{idx+1}] Proc: {processo} | Fornecedor: {fornecedor} | Valor: {valor_fmt}\nObjeto: {objeto}"
         
