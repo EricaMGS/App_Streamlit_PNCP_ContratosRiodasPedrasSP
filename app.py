@@ -6,7 +6,6 @@ import requests
 import streamlit as st
 from docx import Document
 from docx.shared import Pt, RGBColor
-from docx.enum.text import WD_ALIGN_PARAGRAPH
 from fpdf import FPDF
 
 # ============================================================
@@ -294,7 +293,6 @@ if st.session_state.df_resultado is not None and not st.session_state.df_resulta
     # ============================================================
     doc = Document()
     
-    # Título do Documento
     p_titulo = doc.add_paragraph()
     r_titulo = p_titulo.add_run(f"Relatório Executivo: {tipo_consulta}")
     r_titulo.bold = True
@@ -310,7 +308,6 @@ if st.session_state.df_resultado is not None and not st.session_state.df_resulta
         p_reg = doc.add_paragraph()
         p_reg.add_run(f"Item #{idx + 1}\n").bold = True
         
-        # Extração inteligente de campos comuns limpos
         processo = row.get('processo', 'N/D')
         fornecedor = row.get('nomeRazaoSocialFornecedor', 'N/D')
         objeto = row.get('objetoContrato', row.get('objetoCompra', 'N/D'))
@@ -325,7 +322,9 @@ if st.session_state.df_resultado is not None and not st.session_state.df_resulta
         p_reg.add_run(f"• Fornecedor: {fornecedor}\n")
         p_reg.add_run(f"• Valor: {valor_fmt}\n")
         p_reg.add_run(f"• Objeto: {objeto}\n")
-        p_reg.add_paragraph("-" * 40)
+        
+        # Correção aplicada aqui (usando doc.add_paragraph em vez de p_reg.add_paragraph)
+        doc.add_paragraph("-" * 40)
 
     buffer_docx = io.BytesIO()
     doc.save(buffer_docx)
@@ -339,7 +338,6 @@ if st.session_state.df_resultado is not None and not st.session_state.df_resulta
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
     
-    # Cabeçalho do PDF
     pdf.set_font("Arial", 'B', 14)
     pdf.cell(0, 10, txt=f"Relatorio: {tipo_consulta}", ln=True, align="C")
     
