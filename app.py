@@ -28,7 +28,7 @@ st.markdown(
 # ============================================================
 
 CNPJ_RIO_DAS_PEDRAS = "44826840000183"
-CODIGO_IBGE_RIO_DAS_PEDRAS = "3544003"
+CODIGO_IBGE_RIO_DAS_PEDRAS = "3544004"  # Corrigido para o dígito 4 correto
 UF = "SP"
 BASE_URL = "https://pncp.gov.br/api/consulta/v1"
 
