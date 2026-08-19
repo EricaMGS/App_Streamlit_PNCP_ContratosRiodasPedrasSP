@@ -202,9 +202,11 @@ if st.sidebar.button("🔎 Gerar Relatório", type="primary"):
     endpoint = endpoints[tipo_consulta]
     tamanho_pagina = 50 if tipo_consulta == "Editais e Avisos de Contratações" else 100
 
-    # Ajuste dinâmico das chaves de data de acordo com a exigência da API do PNCP
+    # Configuração de parâmetros compatível com as exigências da API atual do PNCP
     if tipo_consulta == "Editais e Avisos de Contratações":
         params = {
+            "dataInicial": data_inicio.strftime("%Y%m%d"),
+            "dataFinal": data_fim.strftime("%Y%m%d"),
             "dataPublicacaoInicial": data_inicio.strftime("%Y%m%d"),
             "dataPublicacaoFinal": data_fim.strftime("%Y%m%d"),
             "pagina": 1,
