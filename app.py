@@ -1,3 +1,4 @@
+```python
 import io
 import datetime
 import time
@@ -96,15 +97,20 @@ data_fim = st.sidebar.date_input(
 # ============================================================
 
 if data_fim < data_inicio:
+
     st.sidebar.error(
         "⚠️ A Data Final não pode ser anterior à Data Inicial."
     )
+
     st.stop()
 
+
 if (data_fim - data_inicio).days > 365:
+
     st.sidebar.error(
         "⚠️ O período não pode ser maior que 365 dias."
     )
+
     st.stop()
 
 
@@ -115,16 +121,20 @@ if (data_fim - data_inicio).days > 365:
 if "df_resultado" not in st.session_state:
     st.session_state.df_resultado = None
 
+
 if "tipo_anterior" not in st.session_state:
     st.session_state.tipo_anterior = tipo_consulta
 
+
 if st.session_state.tipo_anterior != tipo_consulta:
+
     st.session_state.df_resultado = None
+
     st.session_state.tipo_anterior = tipo_consulta
 
 
 # ============================================================
-# FUNÇÃO PARA EXTRAIR OS REGISTROS DA RESPOSTA
+# FUNÇÃO PARA EXTRAIR REGISTROS
 # ============================================================
 
 def extrair_registros(data):
@@ -153,7 +163,11 @@ def extrair_registros(data):
 # CONSULTA AO PNCP COM RETENTATIVAS
 # ============================================================
 
-def consultar_pncp(url, params, tentativa_maxima=3):
+def consultar_pncp(
+    url,
+    params,
+    tentativa_maxima=3
+):
 
     headers = {
         "User-Agent": (
@@ -167,7 +181,10 @@ def consultar_pncp(url, params, tentativa_maxima=3):
 
     ultimo_erro = None
 
-    for tentativa in range(1, tentativa_maxima + 1):
+    for tentativa in range(
+        1,
+        tentativa_maxima + 1
+    ):
 
         try:
 
@@ -178,13 +195,14 @@ def consultar_pncp(url, params, tentativa_maxima=3):
                 timeout=(15, 90)
             )
 
-            # ------------------------------------------------
+            # ==================================================
             # SUCESSO
-            # ------------------------------------------------
+            # ==================================================
 
             if resposta.status_code == 200:
 
                 try:
+
                     return resposta.json()
 
                 except ValueError:
@@ -194,16 +212,19 @@ def consultar_pncp(url, params, tentativa_maxima=3):
                         "não está em formato JSON válido."
                     )
 
-            # ------------------------------------------------
-            # SEM RESULTADOS
-            # ------------------------------------------------
+
+            # ==================================================
+            # SEM CONTEÚDO
+            # ==================================================
 
             if resposta.status_code == 204:
+
                 return []
 
-            # ------------------------------------------------
+
+            # ==================================================
             # ERROS TEMPORÁRIOS
-            # ------------------------------------------------
+            # ==================================================
 
             if resposta.status_code in [
                 429,
@@ -235,9 +256,10 @@ def consultar_pncp(url, params, tentativa_maxima=3):
 
                 raise ultimo_erro
 
-            # ------------------------------------------------
+
+            # ==================================================
             # OUTROS ERROS HTTP
-            # ------------------------------------------------
+            # ==================================================
 
             raise Exception(
                 f"Erro na API do PNCP. "
@@ -245,9 +267,10 @@ def consultar_pncp(url, params, tentativa_maxima=3):
                 f"{resposta.text[:500]}"
             )
 
-        # ----------------------------------------------------
+
+        # ======================================================
         # TIMEOUT
-        # ----------------------------------------------------
+        # ======================================================
 
         except requests.exceptions.Timeout as erro:
 
@@ -267,9 +290,10 @@ def consultar_pncp(url, params, tentativa_maxima=3):
 
                 continue
 
-        # ----------------------------------------------------
+
+        # ======================================================
         # ERRO DE CONEXÃO
-        # ----------------------------------------------------
+        # ======================================================
 
         except requests.exceptions.ConnectionError as erro:
 
@@ -289,31 +313,43 @@ def consultar_pncp(url, params, tentativa_maxima=3):
 
                 continue
 
-        # ----------------------------------------------------
+
+        # ======================================================
         # OUTROS ERROS
-        # ----------------------------------------------------
+        # ======================================================
 
         except Exception:
+
             raise
 
+
     if ultimo_erro:
+
         raise ultimo_erro
 
-    raise Exception("Não foi possível consultar o PNCP.")
+
+    raise Exception(
+        "Não foi possível consultar o PNCP."
+    )
 
 
 # ============================================================
 # CONSULTA PAGINADA
 # ============================================================
 
-def consultar_paginas(url, parametros):
+def consultar_paginas(
+    url,
+    parametros
+):
 
     todos_registros = []
 
-    # Número máximo de páginas de segurança
     max_paginas = 100
 
-    for pagina in range(1, max_paginas + 1):
+    for pagina in range(
+        1,
+        max_paginas + 1
+    ):
 
         parametros_pagina = parametros.copy()
 
@@ -324,25 +360,27 @@ def consultar_paginas(url, parametros):
             parametros_pagina
         )
 
-        registros = extrair_registros(resposta)
-
-        if not registros:
-            break
-
-        todos_registros.extend(registros)
-
-        # Tamanho solicitado ao PNCP
-        tamanho_pagina = parametros_pagina.get(
-            "tamanhoPagina",
-            100
+        registros = extrair_registros(
+            resposta
         )
 
-        # Se retornou menos que o limite,
-        # provavelmente chegamos ao final.
-        if len(registros) < tamanho_pagina:
+        if not registros:
+
             break
 
-        # Pequena pausa entre páginas
+        todos_registros.extend(
+            registros
+        )
+
+        tamanho_pagina = parametros_pagina.get(
+            "tamanhoPagina",
+            50
+        )
+
+        if len(registros) < tamanho_pagina:
+
+            break
+
         time.sleep(0.5)
 
     return todos_registros
@@ -357,9 +395,9 @@ if st.sidebar.button(
     type="primary"
 ):
 
-    # --------------------------------------------------------
+    # ========================================================
     # AVISO AO USUÁRIO
-    # --------------------------------------------------------
+    # ========================================================
 
     st.info(
         "ℹ️ **A consulta é feita diretamente no Portal PNCP.** "
@@ -370,9 +408,10 @@ if st.sidebar.button(
         "se o PNCP demorar para responder."
     )
 
-    # --------------------------------------------------------
+
+    # ========================================================
     # ENDPOINTS
-    # --------------------------------------------------------
+    # ========================================================
 
     endpoints = {
 
@@ -386,56 +425,104 @@ if st.sidebar.button(
             f"{BASE_URL}/contratacoes/publicacao"
     }
 
-    endpoint = endpoints[tipo_consulta]
 
-    # --------------------------------------------------------
+    endpoint = endpoints[
+        tipo_consulta
+    ]
+
+
+    # ========================================================
+    # TAMANHO DA PÁGINA
+    #
+    # IMPORTANTE:
+    # O endpoint de Editais/Avisos estava retornando:
+    #
+    # HTTP 400
+    # "Tamanho de página inválido"
+    #
+    # Por isso:
+    # - Contratos = 100
+    # - Atas = 100
+    # - Editais = 50
+    # ========================================================
+
+    if tipo_consulta == "Editais e Avisos de Contratações":
+
+        tamanho_pagina = 50
+
+    else:
+
+        tamanho_pagina = 100
+
+
+    # ========================================================
     # PARÂMETROS BÁSICOS
-    # --------------------------------------------------------
+    # ========================================================
 
     parametros = {
-        "dataInicial": data_inicio.strftime("%Y%m%d"),
-        "dataFinal": data_fim.strftime("%Y%m%d"),
-        "pagina": 1,
-        "tamanhoPagina": 100
+
+        "dataInicial":
+            data_inicio.strftime("%Y%m%d"),
+
+        "dataFinal":
+            data_fim.strftime("%Y%m%d"),
+
+        "pagina":
+            1,
+
+        "tamanhoPagina":
+            tamanho_pagina
     }
 
-    # --------------------------------------------------------
+
+    # ========================================================
     # CONTRATOS
-    # --------------------------------------------------------
+    # ========================================================
 
     if tipo_consulta == "Contratos":
 
-        parametros["cnpjOrgao"] = CNPJ_RIO_DAS_PEDRAS
+        parametros[
+            "cnpjOrgao"
+        ] = CNPJ_RIO_DAS_PEDRAS
 
-    # --------------------------------------------------------
+
+    # ========================================================
     # ATAS
-    # --------------------------------------------------------
+    # ========================================================
 
     elif tipo_consulta == "Atas de Registro de Preços":
 
-        parametros["cnpj"] = CNPJ_RIO_DAS_PEDRAS
+        parametros[
+            "cnpj"
+        ] = CNPJ_RIO_DAS_PEDRAS
 
-    # --------------------------------------------------------
-    # EDITAIS
-    # --------------------------------------------------------
+
+    # ========================================================
+    # EDITAIS E AVISOS
+    # ========================================================
 
     elif tipo_consulta == "Editais e Avisos de Contratações":
 
-        parametros["codigoModalidadeContratacao"] = (
-            modalidade_codigo
-        )
+        parametros[
+            "codigoModalidadeContratacao"
+        ] = modalidade_codigo
 
-        parametros["uf"] = UF
+        parametros[
+            "uf"
+        ] = UF
 
-        parametros["codigoMunicipioIbge"] = (
-            CODIGO_IBGE_RIO_DAS_PEDRAS
-        )
+        parametros[
+            "codigoMunicipioIbge"
+        ] = CODIGO_IBGE_RIO_DAS_PEDRAS
 
-        parametros["cnpj"] = CNPJ_RIO_DAS_PEDRAS
+        parametros[
+            "cnpj"
+        ] = CNPJ_RIO_DAS_PEDRAS
 
-    # --------------------------------------------------------
+
+    # ========================================================
     # CONSULTA
-    # --------------------------------------------------------
+    # ========================================================
 
     try:
 
@@ -449,17 +536,21 @@ if st.sidebar.button(
                 parametros
             )
 
-        # ----------------------------------------------------
-        # PROCESSAMENTO
-        # ----------------------------------------------------
+
+        # ====================================================
+        # PROCESSAMENTO DOS RESULTADOS
+        # ====================================================
 
         if registros:
 
-            df_temp = pd.DataFrame(registros)
+            df_temp = pd.DataFrame(
+                registros
+            )
 
-            # ------------------------------------------------
-            # FILTRAGEM COMPLEMENTAR DE SEGURANÇA
-            # ------------------------------------------------
+
+            # =================================================
+            # FILTRAGEM COMPLEMENTAR DOS CONTRATOS
+            # =================================================
 
             if tipo_consulta == "Contratos":
 
@@ -471,6 +562,7 @@ if st.sidebar.button(
                 ]
 
                 encontrou_cnpj = False
+
 
                 for coluna in colunas_cnpj:
 
@@ -486,35 +578,46 @@ if st.sidebar.button(
                             )
                         )
 
+
                         mascara = valores.str.contains(
                             CNPJ_RIO_DAS_PEDRAS,
                             na=False
                         )
 
+
                         if mascara.any():
 
-                            df_temp = df_temp[mascara]
+                            df_temp = df_temp[
+                                mascara
+                            ]
 
                             encontrou_cnpj = True
 
                             break
 
-                # Não elimina os registros caso a estrutura
-                # retornada pelo PNCP tenha mudado.
+
                 if not encontrou_cnpj:
 
                     st.warning(
-                        "⚠️ O PNCP retornou registros, mas a "
-                        "estrutura da resposta não possui uma "
-                        "coluna de CNPJ reconhecida para a "
-                        "filtragem complementar."
+                        "⚠️ O PNCP retornou registros, mas "
+                        "a estrutura da resposta não possui "
+                        "uma coluna de CNPJ reconhecida para "
+                        "a filtragem complementar."
                     )
 
-            # ------------------------------------------------
-            # SALVAR RESULTADO
-            # ------------------------------------------------
 
-            st.session_state.df_resultado = df_temp
+            # =================================================
+            # SALVAR RESULTADO
+            # =================================================
+
+            st.session_state.df_resultado = (
+                df_temp
+            )
+
+
+            # =================================================
+            # RESULTADO VAZIO
+            # =================================================
 
             if df_temp.empty:
 
@@ -523,6 +626,11 @@ if st.sidebar.button(
                     "Rio das Pedras/SP no período informado."
                 )
 
+
+            # =================================================
+            # RESULTADO OK
+            # =================================================
+
             else:
 
                 st.success(
@@ -530,18 +638,26 @@ if st.sidebar.button(
                     f"{len(df_temp)} registro(s) encontrado(s)."
                 )
 
+
+        # ====================================================
+        # NENHUM REGISTRO
+        # ====================================================
+
         else:
 
-            st.session_state.df_resultado = pd.DataFrame()
+            st.session_state.df_resultado = (
+                pd.DataFrame()
+            )
 
             st.warning(
                 "ℹ️ O PNCP não retornou registros para "
                 "os parâmetros informados."
             )
 
-    # --------------------------------------------------------
+
+    # ========================================================
     # TIMEOUT FINAL
-    # --------------------------------------------------------
+    # ========================================================
 
     except requests.exceptions.Timeout:
 
@@ -556,9 +672,10 @@ if st.sidebar.button(
             "**Tente novamente ou utilize um período menor.**"
         )
 
-    # --------------------------------------------------------
-    # CONEXÃO
-    # --------------------------------------------------------
+
+    # ========================================================
+    # ERRO DE CONEXÃO
+    # ========================================================
 
     except requests.exceptions.ConnectionError:
 
@@ -571,9 +688,10 @@ if st.sidebar.button(
             "Tente novamente em alguns minutos."
         )
 
-    # --------------------------------------------------------
+
+    # ========================================================
     # ERRO GERAL
-    # --------------------------------------------------------
+    # ========================================================
 
     except Exception as erro:
 
@@ -599,10 +717,12 @@ if (
 
     df = st.session_state.df_resultado
 
+
     st.success(
         f"📊 Exibindo {len(df)} registro(s) "
         f"para Rio das Pedras/SP."
     )
+
 
     st.dataframe(
         df,
@@ -610,19 +730,25 @@ if (
         hide_index=True
     )
 
+
     # ========================================================
     # EXPORTAÇÃO
     # ========================================================
 
-    st.markdown("### 📥 Opções de Exportação")
+    st.markdown(
+        "### 📥 Opções de Exportação"
+    )
+
 
     col1, col2, col3, col4 = st.columns(4)
+
 
     nome = (
         tipo_consulta
         .replace(" ", "_")
         .replace("/", "_")
     )
+
 
     # ========================================================
     # EXCEL
@@ -637,15 +763,19 @@ if (
 
     buffer_excel.seek(0)
 
+
     col1.download_button(
         label="📊 Excel (.xlsx)",
         data=buffer_excel.getvalue(),
-        file_name=f"{nome}_Rio_Das_Pedras.xlsx",
+        file_name=(
+            f"{nome}_Rio_Das_Pedras.xlsx"
+        ),
         mime=(
             "application/vnd.openxmlformats-officedocument."
             "spreadsheetml.sheet"
         )
     )
+
 
     # ========================================================
     # CSV
@@ -656,12 +786,16 @@ if (
         encoding="utf-8-sig"
     )
 
+
     col2.download_button(
         label="📄 CSV (.csv)",
         data=csv_data,
-        file_name=f"{nome}_Rio_Das_Pedras.csv",
+        file_name=(
+            f"{nome}_Rio_Das_Pedras.csv"
+        ),
         mime="text/csv"
     )
+
 
     # ========================================================
     # WORD
@@ -669,18 +803,22 @@ if (
 
     documento = Document()
 
+
     documento.add_heading(
         f"Relatório - {tipo_consulta}",
         0
     )
 
+
     documento.add_paragraph(
         "Município: Rio das Pedras/SP"
     )
 
+
     documento.add_paragraph(
         f"Total de registros: {len(df)}"
     )
+
 
     documento.add_paragraph(
         f"Período: "
@@ -689,13 +827,13 @@ if (
         f"{data_fim.strftime('%d/%m/%Y')}"
     )
 
+
     documento.add_heading(
         "Registros",
         level=1
     )
 
-    # Limita o Word a 50 registros
-    # para evitar arquivos gigantes.
+
     for _, linha in df.head(50).iterrows():
 
         texto = " | ".join(
@@ -707,23 +845,30 @@ if (
             texto
         )
 
+
     buffer_word = io.BytesIO()
+
 
     documento.save(
         buffer_word
     )
 
+
     buffer_word.seek(0)
+
 
     col3.download_button(
         label="📝 Word (.docx)",
         data=buffer_word.getvalue(),
-        file_name=f"Relatorio_{nome}.docx",
+        file_name=(
+            f"Relatorio_{nome}.docx"
+        ),
         mime=(
             "application/vnd.openxmlformats-officedocument."
             "wordprocessingml.document"
         )
     )
+
 
     # ========================================================
     # PDF
@@ -731,28 +876,34 @@ if (
 
     pdf = FPDF()
 
+
     pdf.set_auto_page_break(
         auto=True,
         margin=15
     )
 
+
     pdf.add_page()
+
 
     pdf.set_font(
         "Arial",
         size=12
     )
 
+
     titulo = (
         f"Relatorio {tipo_consulta} "
         f"- Rio das Pedras/SP"
     )
+
 
     titulo_limpo = (
         titulo
         .encode("latin-1", "replace")
         .decode("latin-1")
     )
+
 
     pdf.cell(
         0,
@@ -762,10 +913,12 @@ if (
         align="C"
     )
 
+
     pdf.set_font(
         "Arial",
         size=9
     )
+
 
     pdf.cell(
         0,
@@ -775,6 +928,7 @@ if (
         ),
         ln=True
     )
+
 
     pdf.cell(
         0,
@@ -788,16 +942,22 @@ if (
         ln=True
     )
 
+
     pdf.ln(5)
 
-    # Limita o PDF aos primeiros 30 registros
+
     for _, linha in df.head(30).iterrows():
 
         for coluna in df.columns:
 
-            valor = str(linha[coluna])
+            valor = str(
+                linha[coluna]
+            )
 
-            texto = f"{coluna}: {valor}"
+            texto = (
+                f"{coluna}: {valor}"
+            )
+
 
             texto_limpo = (
                 texto
@@ -805,11 +965,14 @@ if (
                 .decode("latin-1")
             )
 
-            # Limita o tamanho de cada campo
+
             if len(texto_limpo) > 180:
+
                 texto_limpo = (
-                    texto_limpo[:180] + "..."
+                    texto_limpo[:180]
+                    + "..."
                 )
+
 
             pdf.multi_cell(
                 0,
@@ -817,18 +980,31 @@ if (
                 txt=texto_limpo
             )
 
+
         pdf.ln(3)
+
 
     pdf_bytes = pdf.output(
         dest="S"
     )
 
-    if isinstance(pdf_bytes, str):
-        pdf_bytes = pdf_bytes.encode("latin-1")
+
+    if isinstance(
+        pdf_bytes,
+        str
+    ):
+
+        pdf_bytes = pdf_bytes.encode(
+            "latin-1"
+        )
+
 
     col4.download_button(
         label="📕 PDF (.pdf)",
         data=pdf_bytes,
-        file_name=f"Relatorio_{nome}.pdf",
+        file_name=(
+            f"Relatorio_{nome}.pdf"
+        ),
         mime="application/pdf"
     )
+```
