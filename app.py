@@ -28,7 +28,7 @@ st.markdown(
 # ============================================================
 
 CNPJ_RIO_DAS_PEDRAS = "44826840000183"
-CODIGO_IBGE_RIO_DAS_PEDRAS = "3544004"  # Corrigido para o dígito 4 correto
+CODIGO_IBGE_RIO_DAS_PEDRAS = "3544004"
 UF = "SP"
 BASE_URL = "https://pncp.gov.br/api/consulta/v1"
 
@@ -202,22 +202,29 @@ if st.sidebar.button("🔎 Gerar Relatório", type="primary"):
     endpoint = endpoints[tipo_consulta]
     tamanho_pagina = 50 if tipo_consulta == "Editais e Avisos de Contratações" else 100
 
-    params = {
-        "dataInicial": data_inicio.strftime("%Y%m%d"),
-        "dataFinal": data_fim.strftime("%Y%m%d"),
-        "pagina": 1,
-        "tamanhoPagina": tamanho_pagina
-    }
-
-    if tipo_consulta == "Contratos":
-        params["cnpjOrgao"] = CNPJ_RIO_DAS_PEDRAS
-    elif tipo_consulta == "Atas de Registro de Preços":
-        params["cnpj"] = CNPJ_RIO_DAS_PEDRAS
-    elif tipo_consulta == "Editais e Avisos de Contratações":
-        params["codigoModalidadeContratacao"] = modalidade_codigo
-        params["uf"] = UF
-        params["codigoMunicipioIbge"] = CODIGO_IBGE_RIO_DAS_PEDRAS
-        params["cnpj"] = CNPJ_RIO_DAS_PEDRAS
+    # Ajuste dinâmico das chaves de data de acordo com a exigência da API do PNCP
+    if tipo_consulta == "Editais e Avisos de Contratações":
+        params = {
+            "dataPublicacaoInicial": data_inicio.strftime("%Y%m%d"),
+            "dataPublicacaoFinal": data_fim.strftime("%Y%m%d"),
+            "pagina": 1,
+            "tamanhoPagina": tamanho_pagina,
+            "codigoModalidadeContratacao": modalidade_codigo,
+            "uf": UF,
+            "codigoMunicipioIbge": CODIGO_IBGE_RIO_DAS_PEDRAS,
+            "cnpj": CNPJ_RIO_DAS_PEDRAS
+        }
+    else:
+        params = {
+            "dataInicial": data_inicio.strftime("%Y%m%d"),
+            "dataFinal": data_fim.strftime("%Y%m%d"),
+            "pagina": 1,
+            "tamanhoPagina": tamanho_pagina
+        }
+        if tipo_consulta == "Contratos":
+            params["cnpjOrgao"] = CNPJ_RIO_DAS_PEDRAS
+        elif tipo_consulta == "Atas de Registro de Preços":
+            params["cnpj"] = CNPJ_RIO_DAS_PEDRAS
 
     try:
         with st.spinner("🔄 Buscando dados no PNCP..."):
