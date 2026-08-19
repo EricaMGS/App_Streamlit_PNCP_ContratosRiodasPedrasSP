@@ -209,9 +209,9 @@ def obter_dados_registro(row, tipo):
     """Extrai com precisão os dados corretos dependendo se é Contrato, Ata ou Edital"""
     if tipo == "Atas de Registro de Preços":
         processo = row.get('numeroAtaRegistroPreco', row.get('numeroControlePNCPCompra', 'N/D'))
-        fornecedor = row.get('usuario', 'Prefeitura Municipal') # Atas públicas do PNCP geralmente listam o órgão ou usuário publicador
+        fornecedor = row.get('usuario', 'Prefeitura Municipal')
         objeto = row.get('objetoContratacao', 'N/D')
-        valor = "Não informado na Ata"
+        valor = row.get('valorGlobal', row.get('valorTotalEstimado', row.get('valorHomologado', 'Não informado')))
     elif tipo == "Contratos":
         processo = row.get('processo', row.get('numeroControlePNCPCompra', 'N/D'))
         fornecedor = row.get('nomeRazaoSocialFornecedor', 'N/D')
@@ -223,7 +223,6 @@ def obter_dados_registro(row, tipo):
         objeto = row.get('objetoCompra', 'N/D')
         valor = row.get('valorTotalHomologado', row.get('valorTotalEstimado', 0))
     
-    # Formatação limpa de valor se for numérico
     try:
         val_float = float(valor)
         valor_fmt = f"R$ {val_float:,.2f}"
