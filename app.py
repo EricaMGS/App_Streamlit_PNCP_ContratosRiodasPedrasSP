@@ -1,4 +1,5 @@
 import io
+import datetime
 import pandas as pd
 import requests
 import streamlit as st
@@ -31,7 +32,8 @@ if tipo_consulta == "Editais e Avisos de Contratação":
     modalidade_codigo = modalidade_opcoes[mod_escolhida]
 
 data_inicio = st.sidebar.date_input("Data Inicial", value=pd.to_datetime("2026-01-01"))
-data_fim = st.sidebar.date_input("Data Final", value=pd.to_datetime("2026-08-18"))
+# Configurado para puxar a data de hoje automaticamente como padrão final
+data_fim = st.sidebar.date_input("Data Final", value=datetime.date.today())
 
 # Validação do limite de 365 dias do PNCP
 if (data_fim - data_inicio).days > 365:
@@ -59,7 +61,6 @@ if st.sidebar.button("Gerar Relatório"):
     with st.spinner("Consultando dados no PNCP..."):
         cnpj_alvo = "44826840000183"
         
-        # Parâmetros obrigatórios atualizados
         params = {
             "cnpj": cnpj_alvo, 
             "dataInicial": data_inicio.strftime("%Y%m%d"), 
@@ -67,7 +68,6 @@ if st.sidebar.button("Gerar Relatório"):
             "pagina": 1
         }
         
-        # Adiciona a modalidade caso seja edital (exigência da API)
         if tipo_consulta == "Editais e Avisos de Contratação" and modalidade_codigo:
             params["codigoModalidadeContratacao"] = modalidade_codigo
 
@@ -86,17 +86,19 @@ if st.sidebar.button("Gerar Relatório"):
                 if lote:
                     df_temp = pd.DataFrame(lote)
                     
-                    # --- FILTRAGEM RÍGIDA PARA RIO DAS PEDRAS ---
+                    # --- FILTRAGEM SEGURA PARA RIO DAS PEDRAS ---
+                    # Valida se o CNPJ está presente em qualquer coluna relevante para evitar falsos vazios
                     if "orgaoEntidade" in df_temp.columns:
-                        df_temp = df_temp[df_temp["orgaoEntidade"].astype(str).str.contains(cnpj_alvo, na=False)]
+                        mask = df_temp["orgaoEntidade"].astype(str).str.contains(cnpj_alvo, na=False)
+                        df_temp = df_temp[mask]
                     
                     st.session_state.df_resultado = df_temp
                     
                     if df_temp.empty:
-                        st.warning("Nenhum registro encontrado especificamente para o CNPJ de Rio das Pedras neste período.")
+                        st.warning("Nenhum registro encontrado para este CNPJ no período informado.")
                 else:
                     st.session_state.df_resultado = pd.DataFrame()
-                    st.warning("Nenhum registro retornado pelo servidor para os filtros informados.")
+                    st.warning("Nenhum registro retornado pelo servidor.")
             else:
                 st.error(f"Erro na API (Status {resp.status_code}): {resp.text}")
                 st.session_state.df_resultado = None
