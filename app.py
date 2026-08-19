@@ -173,16 +173,12 @@ def tratar_dataframe(df):
         return df
     
     df_tratado = df.copy()
-    
-    # Converte colunas que são dicionários em strings legíveis ou extrai chaves principais
     for col in df_tratado.columns:
         sample = df_tratado[col].dropna()
         if not sample.empty and isinstance(sample.iloc[0], dict):
-            # Extrai nomes úteis se existirem no dicionário
             df_tratado[col] = df_tratado[col].apply(
                 lambda x: x.get('nome') or x.get('razaoSocial') or x.get('descricao') or str(x) if isinstance(x, dict) else str(x)
             )
-            
     return df_tratado
 
 # ============================================================
@@ -206,20 +202,35 @@ def consultar_paginas(url, params, max_paginas=100):
     return todos_registros
 
 # ============================================================
-# EXTRATOR ROBUSTO DE CAMPOS
+# EXTRATOR ROBUSTO DE CAMPOS ESPECÍFICOS POR TIPO
 # ============================================================
 
-def obter_campo(row, chaves):
-    for chave in chaves:
-        if chave in row:
-            val = row[chave]
-            if pd.notna(val) and val != "" and str(val).lower() != "nan":
-                if isinstance(val, dict):
-                    for sub in ["nome", "razaoSocial", "descricao", "valor"]:
-                        if sub in val and pd.notna(val[sub]):
-                            return str(val[sub])
-                return str(val)
-    return "N/D"
+def obter_dados_registro(row, tipo):
+    """Extrai com precisão os dados corretos dependendo se é Contrato, Ata ou Edital"""
+    if tipo == "Atas de Registro de Preços":
+        processo = row.get('numeroAtaRegistroPreco', row.get('numeroControlePNCPCompra', 'N/D'))
+        fornecedor = row.get('usuario', 'Prefeitura Municipal') # Atas públicas do PNCP geralmente listam o órgão ou usuário publicador
+        objeto = row.get('objetoContratacao', 'N/D')
+        valor = "Não informado na Ata"
+    elif tipo == "Contratos":
+        processo = row.get('processo', row.get('numeroControlePNCPCompra', 'N/D'))
+        fornecedor = row.get('nomeRazaoSocialFornecedor', 'N/D')
+        objeto = row.get('objetoContrato', 'N/D')
+        valor = row.get('valorGlobal', row.get('valorInicial', 0))
+    else: # Editais
+        processo = row.get('processo', row.get('numeroControlePNCP', 'N/D'))
+        fornecedor = row.get('usuarioNome', 'N/D')
+        objeto = row.get('objetoCompra', 'N/D')
+        valor = row.get('valorTotalHomologado', row.get('valorTotalEstimado', 0))
+    
+    # Formatação limpa de valor se for numérico
+    try:
+        val_float = float(valor)
+        valor_fmt = f"R$ {val_float:,.2f}"
+    except:
+        valor_fmt = str(valor)
+
+    return str(processo), str(fornecedor), valor_fmt, str(objeto)
 
 # ============================================================
 # BOTÃO CONSULTAR
@@ -309,7 +320,6 @@ if st.session_state.df_resultado is not None and not st.session_state.df_resulta
     df = st.session_state.df_resultado
     st.success(f"📊 Exibindo {len(df)} registros para Rio das Pedras/SP.")
     
-    # Exibição interativa limpa na tela
     st.dataframe(df, use_container_width=True, hide_index=True)
 
     st.markdown("### 📥 Opções de Exportação")
@@ -344,19 +354,10 @@ if st.session_state.df_resultado is not None and not st.session_state.df_resulta
         p_reg = doc.add_paragraph()
         p_reg.add_run(f"Item #{idx + 1}\n").bold = True
         
-        # Busca robusta em múltiplos nomes possíveis de colunas (Atas, Contratos e Editais)
-        processo = obter_campo(row, ['processo', 'numeroProcesso', 'numeroControlePncpCompra', 'numeroAtaRegistroPreco'])
-        fornecedor = obter_campo(row, ['nomeRazaoSocialFornecedor', 'fornecedor', 'nomeFornecedor', 'razaoSocialFornecedor', 'fornecedorDto'])
-        objeto = obter_campo(row, ['objetoContrato', 'objetoCompra', 'objetoAta', 'descricaoObjeto', 'objeto'])
-        valor = obter_campo(row, ['valorGlobal', 'valorTotalEstimado', 'valorHomologado', 'valorAta', 'valorTotal', 'valorEstimado'])
-        
-        try:
-            valor_fmt = f"R$ {float(valor):,.2f}" if valor != "N/D" else "N/D"
-        except:
-            valor_fmt = str(valor)
+        processo, fornecedor, valor_fmt, objeto = obter_dados_registro(row, tipo_consulta)
 
-        p_reg.add_run(f"• Processo/Controle: {processo}\n")
-        p_reg.add_run(f"• Fornecedor: {fornecedor}\n")
+        p_reg.add_run(f"• Identificação/Processo: {processo}\n")
+        p_reg.add_run(f"• Fornecedor/Origem: {fornecedor}\n")
         p_reg.add_run(f"• Valor: {valor_fmt}\n")
         p_reg.add_run(f"• Objeto: {objeto}\n")
         
@@ -387,17 +388,9 @@ if st.session_state.df_resultado is not None and not st.session_state.df_resulta
     pdf.set_font("Arial", size=9)
 
     for idx, row in df.head(30).iterrows():
-        processo = obter_campo(row, ['processo', 'numeroProcesso', 'numeroControlePncpCompra', 'numeroAtaRegistroPreco'])
-        fornecedor = obter_campo(row, ['nomeRazaoSocialFornecedor', 'fornecedor', 'nomeFornecedor', 'razaoSocialFornecedor', 'fornecedorDto'])
-        objeto = obter_campo(row, ['objetoContrato', 'objetoCompra', 'objetoAta', 'descricaoObjeto', 'objeto'])
-        valor = obter_campo(row, ['valorGlobal', 'valorTotalEstimado', 'valorHomologado', 'valorAta', 'valorTotal', 'valorEstimado'])
-        
-        try:
-            valor_fmt = f"R$ {float(valor):,.2f}" if valor != "N/D" else "N/D"
-        except:
-            valor_fmt = str(valor)
+        processo, fornecedor, valor_fmt, objeto = obter_dados_registro(row, tipo_consulta)
 
-        bloco = f"[{idx+1}] Proc/Ref: {processo} | Fornecedor: {fornecedor} | Valor: {valor_fmt}\nObjeto: {objeto}"
+        bloco = f"[{idx+1}] Ref: {processo} | Origem: {fornecedor} | Valor: {valor_fmt}\nObjeto: {objeto}"
         
         bloco_limpo = bloco.encode("latin-1", "replace").decode("latin-1")
         pdf.multi_cell(0, 5, txt=bloco_limpo)
