@@ -387,7 +387,6 @@ if st.session_state.df_resultado is not None and not st.session_state.df_resulta
         lista_contratos = df.apply(lambda x: f"{x.get('numeroControlePNCP')} - Proc: {x.get('processo')}", axis=1).tolist()
         contrato_selecionado = st.selectbox("Selecione um contrato:", lista_contratos)
         
-        # Campo para digitar o número do aditivo
         numero_aditivo = st.text_input("Digite o número do aditivo (opcional):", placeholder="Ex: 01/2026")
         
         if st.button("Buscar Aditivos do Contrato"):
@@ -410,8 +409,8 @@ if st.session_state.df_resultado is not None and not st.session_state.df_resulta
                     st.warning("Nenhum documento/aditivo encontrado para este contrato.")
         st.markdown("---")
 
-    # GRÁFICOS
-    st.markdown("### 📈 Análise Gráfica")
+    # GRÁFICOS (COM NOME DESCRITIVO)
+    st.markdown("### 📈 Análise Gráfica: Volume de Registros por Mês/Ano")
     coluna_data = next((c for c in ["dataPublicacao", "dataAssinatura", "dataInclusao"] if c in df.columns), None)
     if coluna_data:
         try:
