@@ -1,6 +1,6 @@
 
 Portal PNCP - Rio das Pedras/SP
-Este é um projeto de análise de dados governamentais desenvolvido para o município de Rio das Pedras/SP, permitindo a consulta integrada, análise e exportação de Contratos, Atas de Registro de Preços e Editais diretamente do Portal Nacional de Contratações Públicas (PNCP).
+Este é um projeto de análise de dados governamentais desenvolvido para consultar dados públicos no PNCP de Rio das Pedras/SP, permitindo a consulta integrada, análise e exportação de Contratos, Atas de Registro de Preços e Editais diretamente do Portal Nacional de Contratações Públicas (PNCP).
 
 🚀 Funcionalidades
 Consulta Direta à API: Integração em tempo real com a API oficial do PNCP.
