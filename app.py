@@ -21,7 +21,7 @@ st.title("Contratações de Rio das Pedras/SP")
 
 st.markdown(
     "Consulta integrada de Contratos, Atas e Editais "
-    "direto do Portal Nacional de Contratações Públicas."
+    "direto do Portal Nacional de Contratações Públicas."""
     "Acompanhamento para o Controle Interno"
 )
 
