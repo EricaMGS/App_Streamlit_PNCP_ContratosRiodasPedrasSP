@@ -2216,4 +2216,3 @@ st.caption(
     "Portal PNCP - Rio das Pedras/SP | "
     "Consulta de dados públicos do PNCP"
 )
-```
