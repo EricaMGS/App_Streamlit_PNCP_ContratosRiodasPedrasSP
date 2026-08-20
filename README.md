@@ -1,4 +1,4 @@
-
+Consulta de dados de Contratações do Portal Nacional de Contratações Públicas (PNCP)
 Desenvolvido para facilitar o controle social, este painel permite a consulta ágil e a análise de dados públicos de Rio das Pedras/SP. Através da integração com o PNCP, o projeto centraliza o monitoramento de editais, contratos e seus respectivos aditivos, oferecendo ferramentas nativas para exportação de relatórios e visualização de indicadores financeiros e operacionais.
 
 🚀 Funcionalidades
