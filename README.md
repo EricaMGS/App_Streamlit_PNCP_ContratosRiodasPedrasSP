@@ -23,7 +23,7 @@ FPDF & python-docx: Geração de relatórios em PDF e Word.
 📋 Como executar localmente
 Clone o repositório:
 Bash
-git clone https://github.com/seu-usuario/seu-repositorio.git
+git clone https://github.com/EricaMGS/contratacoespncpriodaspedrassp.git
 cd seu-repositorio
 
 
