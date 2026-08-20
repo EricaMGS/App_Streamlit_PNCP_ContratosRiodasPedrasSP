@@ -239,7 +239,7 @@ def obter_dados_registro(row, tipo):
 # BOTÃO CONSULTAR
 # ============================================================
 
-if st.sidebar.button("🔎 Gerar Relatório", type="primary"):
+if st.sidebar.button("🔎 Gerar Consulta", type="primary"):
     st.info("ℹ️ Consultando diretamente o PNCP. O processo pode levar alguns instantes...")
 
     endpoints = {
