@@ -287,14 +287,12 @@ if st.sidebar.button("🔎 Gerar Relatório", type="primary"):
             
             if tipo_consulta == "Contratos":
                 possiveis_colunas = ["cnpjOrgao", "orgaoEntidade", "orgao", "unidadeOrgao"]
-                encontrou_cnpj = False
                 for coluna in possiveis_colunas:
                     if coluna in df_temp.columns:
                         serie = df_temp[coluna].astype(str).str.replace(r"\D", "", regex=True)
                         mask = serie.str.contains(CNPJ_RIO_DAS_PEDRAS, na=False)
                         if mask.any():
                             df_temp = df_temp[mask]
-                            encontrou_cnpj = True
                             break
 
             st.session_state.df_resultado = df_temp
@@ -317,14 +315,28 @@ if st.sidebar.button("🔎 Gerar Relatório", type="primary"):
         st.error(f"❌ Erro: {str(e)}")
 
 # ============================================================
-# EXIBIÇÃO PERSISTENTE NO DASHBOARD (COM EXPORTAÇÃO NO TOPO)
+# EXIBIÇÃO PERSISTENTE NO DASHBOARD (COM MÉTRICAS, GRÁFICOS E EXPORTAÇÃO NO TOPO)
 # ============================================================
 
 if st.session_state.df_resultado is not None and not st.session_state.df_resultado.empty:
     df = st.session_state.df_resultado
     st.success(f"📊 Exibindo {len(df)} registros para Rio das Pedras/SP.")
     
-    # OPÇÕES DE EXPORTAÇÃO MOVIDAS PARA A PARTE DE CIMA
+    # 1. MÉTRICAS DE DESTAQUE (KPIs)
+    col_m1, col_m2 = st.columns(2)
+    col_m1.metric("Total de Registros Encontrados", len(df))
+    
+    # Tentativa de somar valores financeiros se existirem colunas de valor
+    coluna_valor = next((c for c in ["valorGlobal", "valorInicial", "valorTotalHomologado", "valorTotalEstimado"] if c in df.columns), None)
+    if coluna_valor:
+        total_valor = pd.to_numeric(df[coluna_valor], errors='coerce').sum()
+        col_m2.metric("Valor Total Envolvido", f"R$ {total_valor:,.2f}")
+    else:
+        col_m2.metric("Status da Consulta", "Concluída com Sucesso")
+
+    st.markdown("---")
+
+    # 2. OPÇÕES DE EXPORTAÇÃO NO TOPO
     st.markdown("### 📥 Opções de Exportação")
     cols = st.columns(4)
     nome = tipo_consulta.replace(" ", "_").replace("/", "_")
@@ -353,14 +365,11 @@ if st.session_state.df_resultado is not None and not st.session_state.df_resulta
     for idx, row in df.head(50).iterrows():
         p_reg = doc.add_paragraph()
         p_reg.add_run(f"Item #{idx + 1}\n").bold = True
-        
         id_pncp, processo, info_extra, objeto = obter_dados_registro(row, tipo_consulta)
-
         p_reg.add_run(f"• ID Contratação PNCP: {id_pncp}\n")
         p_reg.add_run(f"• Processo/Ref: {processo}\n")
         p_reg.add_run(f"• Detalhes: {info_extra}\n")
         p_reg.add_run(f"• Objeto: {objeto}\n")
-        
         doc.add_paragraph("-" * 40)
 
     buffer_docx = io.BytesIO()
@@ -372,15 +381,12 @@ if st.session_state.df_resultado is not None and not st.session_state.df_resulta
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
-    
     pdf.set_font("Arial", 'B', 14)
     pdf.cell(0, 10, txt=f"Relatorio: {tipo_consulta}", ln=True, align="C")
-    
     pdf.set_font("Arial", size=10)
     pdf.cell(0, 6, txt="Municipio: Prefeitura Municipal de Rio das Pedras / SP", ln=True)
     pdf.cell(0, 6, txt=f"Periodo: {data_inicio.strftime('%d/%m/%Y')} a {data_fim.strftime('%d/%m/%Y')} | Total: {len(df)} registros", ln=True)
     pdf.ln(5)
-
     pdf.set_font("Arial", 'B', 10)
     pdf.cell(0, 8, txt="Principais Registros:", ln=True)
     pdf.set_font("Arial", size=9)
@@ -398,6 +404,27 @@ if st.session_state.df_resultado is not None and not st.session_state.df_resulta
     cols[3].download_button("📕 PDF (.pdf)", pdf_bytes, f"Relatorio_{nome}.pdf", mime="application/pdf")
 
     st.markdown("---")
+
+    # 3. GRÁFICOS VISUAIS
+    st.markdown("### 📈 Análise Gráfica")
+    coluna_data = next((c for c in ["dataPublicacao", "dataAssinatura", "dataInclusao"] if c in df.columns), None)
     
-    # EXIBIÇÃO DA TABELA LOGO ABAIXO DOS BOTÕES DE EXPORTAÇÃO
+    if coluna_data:
+        try:
+            df_grafico = df.copy()
+            df_grafico['mes_ano'] = pd.to_datetime(df_grafico[coluna_data], errors='coerce').dt.to_period('M').astype(str)
+            contagem_mes = df_grafico['mes_ano'].value_counts().sort_index()
+            if not contagem_mes.empty:
+                st.bar_chart(contagem_mes)
+            else:
+                st.info("ℹ️ Dados insuficientes para gerar gráfico por período.")
+        except Exception:
+            st.info("ℹ️ Não foi possível gerar o gráfico temporal automaticamente.")
+    else:
+        st.info("ℹ️ Coluna de data não encontrada para exibição do gráfico temporal.")
+
+    st.markdown("---")
+    
+    # 4. TABELA DE DADOS
+    st.markdown("### 📋 Tabela de Dados Detalhada")
     st.dataframe(df, use_container_width=True, hide_index=True)
