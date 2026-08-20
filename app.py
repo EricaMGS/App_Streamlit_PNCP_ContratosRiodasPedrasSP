@@ -6,13 +6,8 @@ from concurrent.futures import ThreadPoolExecutor
 import pandas as pd
 import requests
 import streamlit as st
-
 from docx import Document
-from docx.shared import Pt, RGBColor, Inches
-from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.enum.table import WD_TABLE_ALIGNMENT, WD_CELL_VERTICAL_ALIGNMENT
-from docx.enum.section import WD_ORIENT
-
+from docx.shared import Pt, RGBColor
 from fpdf import FPDF
 
 
@@ -24,15 +19,544 @@ def formatar_moeda_br(valor):
     """Formata número para o padrão brasileiro."""
     try:
         valor = float(valor)
-    except (TypeError, ValueError):
-        valor = 0
+        valor_fmt = "{:,.2f}".format(valor)
+        return f"R$ {valor_fmt.replace(',', 'X').replace('.', ',').replace('X', '.')}"
+    except (ValueError, TypeError):
+        return "N/D"
 
-    valor_fmt = "{:,.2f}".format(valor)
 
-    return (
-        f"R$ "
-        f"{valor_fmt.replace(',', 'X').replace('.', ',').replace('X', '.')}"
+def valor_numerico(valor):
+    """Converte valores numéricos do PNCP de forma segura."""
+    if valor is None:
+        return None
+
+    if isinstance(valor, (int, float)):
+        return float(valor)
+
+    texto = str(valor).strip()
+
+    if not texto:
+        return None
+
+    try:
+        return float(texto)
+    except ValueError:
+        pass
+
+    try:
+        texto = texto.replace("R$", "").replace(" ", "")
+
+        if "," in texto and "." in texto:
+            texto = texto.replace(".", "").replace(",", ".")
+        elif "," in texto:
+            texto = texto.replace(",", ".")
+
+        return float(texto)
+    except (ValueError, TypeError):
+        return None
+
+
+def texto_valido(valor):
+    """Retorna texto válido ou N/D."""
+    if valor is None:
+        return "N/D"
+
+    if isinstance(valor, float) and pd.isna(valor):
+        return "N/D"
+
+    texto = str(valor).strip()
+
+    if texto.lower() in ["", "none", "nan", "null", "n/d", "nd"]:
+        return "N/D"
+
+    return texto
+
+
+def obter_primeiro_valor(row, campos, padrao="N/D"):
+    """
+    Procura o primeiro campo disponível no registro.
+    Permite trabalhar com diferentes nomes de campos retornados pelo PNCP.
+    """
+    for campo in campos:
+        if campo in row:
+            valor = row.get(campo)
+
+            if isinstance(valor, dict):
+                valor = (
+                    valor.get("nome")
+                    or valor.get("razaoSocial")
+                    or valor.get("descricao")
+                    or valor.get("valor")
+                )
+
+            if valor is not None and str(valor).strip() not in [
+                "",
+                "None",
+                "nan",
+                "null",
+            ]:
+                return valor
+
+    return padrao
+
+
+def formatar_data(valor):
+    """Converte datas do PNCP para DD/MM/AAAA."""
+    if valor is None:
+        return "N/D"
+
+    texto = str(valor).strip()
+
+    if not texto or texto.lower() in ["none", "nan", "null", "n/d"]:
+        return "N/D"
+
+    try:
+        data = pd.to_datetime(valor, errors="coerce")
+
+        if pd.isna(data):
+            return texto
+
+        return data.strftime("%d/%m/%Y")
+    except Exception:
+        return texto
+
+
+# ============================================================
+# DADOS PRINCIPAIS DO REGISTRO
+# ============================================================
+
+def obter_dados_registro(row, tipo):
+    """
+    Extrai os principais dados para Word e PDF.
+
+    A função foi ampliada principalmente para ATAS DE REGISTRO
+    DE PREÇOS, pois os nomes dos campos podem variar conforme
+    o retorno do PNCP.
+    """
+
+    # --------------------------------------------------------
+    # IDENTIFICAÇÃO PNCP
+    # --------------------------------------------------------
+
+    id_pncp = obter_primeiro_valor(
+        row,
+        [
+            "numeroControlePNCP",
+            "numeroControlePNCPAta",
+            "numeroControlePNCPCompra",
+            "numeroControlePncp",
+            "numeroControlePNCPAta",
+        ],
     )
+
+    # --------------------------------------------------------
+    # ATA DE REGISTRO DE PREÇOS
+    # --------------------------------------------------------
+
+    if tipo == "Atas de Registro de Preços":
+
+        numero_ata = obter_primeiro_valor(
+            row,
+            [
+                "numeroAtaRegistroPreco",
+                "numeroAta",
+                "numeroRegistroPreco",
+                "numeroAtaRegistroPrecos",
+                "numero",
+            ],
+        )
+
+        processo = obter_primeiro_valor(
+            row,
+            [
+                "processo",
+                "numeroProcesso",
+                "processoAdministrativo",
+                "numeroProcessoAdministrativo",
+            ],
+        )
+
+        objeto = obter_primeiro_valor(
+            row,
+            [
+                "objetoCompra",
+                "objetoAta",
+                "objeto",
+                "descricaoObjeto",
+                "descricao",
+            ],
+        )
+
+        fornecedor = obter_primeiro_valor(
+            row,
+            [
+                "nomeRazaoSocialFornecedor",
+                "razaoSocialFornecedor",
+                "nomeFornecedor",
+                "fornecedorNome",
+                "razaoSocial",
+                "nomeRazaoSocial",
+            ],
+        )
+
+        cnpj_fornecedor = obter_primeiro_valor(
+            row,
+            [
+                "niFornecedor",
+                "cnpjFornecedor",
+                "numeroDocumentoFornecedor",
+                "documentoFornecedor",
+                "cpfCnpjFornecedor",
+            ],
+        )
+
+        valor = obter_primeiro_valor(
+            row,
+            [
+                "valorTotal",
+                "valorGlobal",
+                "valorTotalAta",
+                "valorAta",
+                "valorTotalEstimado",
+                "valorTotalHomologado",
+                "valor",
+            ],
+            padrao=None,
+        )
+
+        valor_num = valor_numerico(valor)
+        valor_formatado = (
+            formatar_moeda_br(valor_num)
+            if valor_num is not None
+            else "N/D"
+        )
+
+        data_assinatura = obter_primeiro_valor(
+            row,
+            [
+                "dataAssinatura",
+                "dataAssinaturaAta",
+                "dataCelebracao",
+                "dataFormalizacao",
+            ],
+        )
+
+        vigencia_inicio = obter_primeiro_valor(
+            row,
+            [
+                "vigenciaInicio",
+                "dataInicioVigencia",
+                "dataVigenciaInicio",
+                "inicioVigencia",
+            ],
+        )
+
+        vigencia_fim = obter_primeiro_valor(
+            row,
+            [
+                "vigenciaFim",
+                "dataFimVigencia",
+                "dataVigenciaFim",
+                "fimVigencia",
+            ],
+        )
+
+        situacao = obter_primeiro_valor(
+            row,
+            [
+                "situacao",
+                "situacaoAta",
+                "status",
+                "situacaoRegistro",
+            ],
+        )
+
+        orgao = obter_primeiro_valor(
+            row,
+            [
+                "orgaoEntidade",
+                "nomeOrgao",
+                "razaoSocialOrgao",
+                "orgao",
+            ],
+        )
+
+        unidade = obter_primeiro_valor(
+            row,
+            [
+                "unidadeOrgao",
+                "nomeUnidade",
+                "unidade",
+            ],
+        )
+
+        return {
+            "id_pncp": texto_valido(id_pncp),
+            "numero": texto_valido(numero_ata),
+            "processo": texto_valido(processo),
+            "objeto": texto_valido(objeto),
+            "fornecedor": texto_valido(fornecedor),
+            "cnpj_fornecedor": texto_valido(cnpj_fornecedor),
+            "valor": valor_formatado,
+            "data_assinatura": formatar_data(data_assinatura),
+            "vigencia_inicio": formatar_data(vigencia_inicio),
+            "vigencia_fim": formatar_data(vigencia_fim),
+            "situacao": texto_valido(situacao),
+            "orgao": texto_valido(orgao),
+            "unidade": texto_valido(unidade),
+        }
+
+    # --------------------------------------------------------
+    # CONTRATOS
+    # --------------------------------------------------------
+
+    elif tipo == "Contratos":
+
+        processo = obter_primeiro_valor(
+            row,
+            [
+                "processo",
+                "numeroProcesso",
+                "processoAdministrativo",
+            ],
+        )
+
+        objeto = obter_primeiro_valor(
+            row,
+            [
+                "objetoContrato",
+                "objetoCompra",
+                "objeto",
+                "descricaoObjeto",
+            ],
+        )
+
+        fornecedor = obter_primeiro_valor(
+            row,
+            [
+                "nomeRazaoSocialFornecedor",
+                "razaoSocialFornecedor",
+                "nomeFornecedor",
+                "fornecedorNome",
+                "razaoSocial",
+            ],
+        )
+
+        valor = obter_primeiro_valor(
+            row,
+            [
+                "valorGlobal",
+                "valorInicial",
+                "valorTotal",
+                "valorContrato",
+            ],
+            padrao=None,
+        )
+
+        valor_num = valor_numerico(valor)
+
+        return {
+            "id_pncp": texto_valido(id_pncp),
+            "numero": texto_valido(
+                obter_primeiro_valor(
+                    row,
+                    ["numeroContrato", "numeroContratoPncp", "numero"],
+                )
+            ),
+            "processo": texto_valido(processo),
+            "objeto": texto_valido(objeto),
+            "fornecedor": texto_valido(fornecedor),
+            "cnpj_fornecedor": texto_valido(
+                obter_primeiro_valor(
+                    row,
+                    [
+                        "niFornecedor",
+                        "cnpjFornecedor",
+                        "numeroDocumentoFornecedor",
+                    ],
+                )
+            ),
+            "valor": (
+                formatar_moeda_br(valor_num)
+                if valor_num is not None
+                else "N/D"
+            ),
+            "data_assinatura": formatar_data(
+                obter_primeiro_valor(
+                    row,
+                    [
+                        "dataAssinatura",
+                        "dataCelebracao",
+                    ],
+                )
+            ),
+            "vigencia_inicio": formatar_data(
+                obter_primeiro_valor(
+                    row,
+                    [
+                        "dataVigenciaInicio",
+                        "vigenciaInicio",
+                    ],
+                )
+            ),
+            "vigencia_fim": formatar_data(
+                obter_primeiro_valor(
+                    row,
+                    [
+                        "dataVigenciaFim",
+                        "vigenciaFim",
+                    ],
+                )
+            ),
+            "situacao": texto_valido(
+                obter_primeiro_valor(
+                    row,
+                    [
+                        "situacao",
+                        "status",
+                    ],
+                )
+            ),
+            "orgao": texto_valido(
+                obter_primeiro_valor(
+                    row,
+                    [
+                        "orgaoEntidade",
+                        "nomeOrgao",
+                        "orgao",
+                    ],
+                )
+            ),
+            "unidade": texto_valido(
+                obter_primeiro_valor(
+                    row,
+                    [
+                        "unidadeOrgao",
+                        "nomeUnidade",
+                        "unidade",
+                    ],
+                )
+            ),
+        }
+
+    # --------------------------------------------------------
+    # EDITAIS
+    # --------------------------------------------------------
+
+    else:
+
+        processo = obter_primeiro_valor(
+            row,
+            [
+                "processo",
+                "numeroProcesso",
+                "processoAdministrativo",
+            ],
+        )
+
+        objeto = obter_primeiro_valor(
+            row,
+            [
+                "objetoCompra",
+                "objeto",
+                "descricaoObjeto",
+            ],
+        )
+
+        valor = obter_primeiro_valor(
+            row,
+            [
+                "valorTotalHomologado",
+                "valorTotalEstimado",
+                "valorEstimado",
+                "valorTotal",
+            ],
+            padrao=None,
+        )
+
+        valor_num = valor_numerico(valor)
+
+        return {
+            "id_pncp": texto_valido(id_pncp),
+            "numero": texto_valido(
+                obter_primeiro_valor(
+                    row,
+                    [
+                        "numeroCompra",
+                        "numeroEdital",
+                        "numero",
+                    ],
+                )
+            ),
+            "processo": texto_valido(processo),
+            "objeto": texto_valido(objeto),
+            "fornecedor": texto_valido(
+                obter_primeiro_valor(
+                    row,
+                    [
+                        "nomeRazaoSocialFornecedor",
+                        "razaoSocialFornecedor",
+                        "nomeFornecedor",
+                    ],
+                )
+            ),
+            "cnpj_fornecedor": texto_valido(
+                obter_primeiro_valor(
+                    row,
+                    [
+                        "niFornecedor",
+                        "cnpjFornecedor",
+                    ],
+                )
+            ),
+            "valor": (
+                formatar_moeda_br(valor_num)
+                if valor_num is not None
+                else "N/D"
+            ),
+            "data_assinatura": formatar_data(
+                obter_primeiro_valor(
+                    row,
+                    [
+                        "dataPublicacao",
+                        "dataPublicacaoPncp",
+                        "dataAberturaProposta",
+                    ],
+                )
+            ),
+            "vigencia_inicio": "N/D",
+            "vigencia_fim": "N/D",
+            "situacao": texto_valido(
+                obter_primeiro_valor(
+                    row,
+                    [
+                        "situacaoCompra",
+                        "situacao",
+                        "status",
+                    ],
+                )
+            ),
+            "orgao": texto_valido(
+                obter_primeiro_valor(
+                    row,
+                    [
+                        "orgaoEntidade",
+                        "nomeOrgao",
+                        "orgao",
+                    ],
+                )
+            ),
+            "unidade": texto_valido(
+                obter_primeiro_valor(
+                    row,
+                    [
+                        "unidadeOrgao",
+                        "nomeUnidade",
+                        "unidade",
+                    ],
+                )
+            ),
+        }
 
 
 # ============================================================
@@ -121,20 +645,15 @@ data_fim = st.sidebar.date_input(
 # ============================================================
 
 if data_fim < data_inicio:
-
     st.sidebar.error(
         "⚠️ A Data Final não pode ser anterior à Data Inicial."
     )
-
     st.stop()
 
-
 if (data_fim - data_inicio).days > 365:
-
     st.sidebar.error(
         "⚠️ O período não pode ser maior que 365 dias."
     )
-
     st.stop()
 
 
@@ -145,19 +664,16 @@ if (data_fim - data_inicio).days > 365:
 if "df_resultado" not in st.session_state:
     st.session_state.df_resultado = None
 
-
 if "tipo_anterior" not in st.session_state:
     st.session_state.tipo_anterior = tipo_consulta
 
-
 if st.session_state.tipo_anterior != tipo_consulta:
-
     st.session_state.df_resultado = None
     st.session_state.tipo_anterior = tipo_consulta
 
 
 # ============================================================
-# FUNÇÕES DE CONSULTA
+# CONSULTA PNCP
 # ============================================================
 
 def consultar_pncp(url, params, max_tentativas=5):
@@ -188,7 +704,6 @@ def consultar_pncp(url, params, max_tentativas=5):
                     return resp.json()
 
                 except ValueError:
-
                     raise Exception(
                         "Resposta da API não é um JSON válido."
                     )
@@ -196,18 +711,17 @@ def consultar_pncp(url, params, max_tentativas=5):
             if resp.status_code == 204:
                 return []
 
-            if resp.status_code in [429, 500, 502, 503, 504]:
+            if resp.status_code in [
+                429,
+                500,
+                502,
+                503,
+                504
+            ]:
 
                 if tentativa < max_tentativas:
 
                     espera = 2 ** tentativa
-
-                    st.warning(
-                        f"⚠️ Servidor instável "
-                        f"(Erro {resp.status_code}). "
-                        f"Nova tentativa em {espera}s "
-                        f"({tentativa}/{max_tentativas})."
-                    )
 
                     time.sleep(espera)
 
@@ -215,7 +729,7 @@ def consultar_pncp(url, params, max_tentativas=5):
 
             raise Exception(
                 f"API retornou HTTP {resp.status_code}: "
-                f"{resp.text[:200]}"
+                f"{resp.text[:300]}"
             )
 
         except (
@@ -227,12 +741,6 @@ def consultar_pncp(url, params, max_tentativas=5):
 
                 espera = 2 ** tentativa
 
-                st.warning(
-                    f"🌐 Problema de rede. "
-                    f"Tentativa {tentativa}/{max_tentativas} "
-                    f"em {espera}s..."
-                )
-
                 time.sleep(espera)
 
                 continue
@@ -243,6 +751,10 @@ def consultar_pncp(url, params, max_tentativas=5):
         "Falha de conexão com o PNCP após várias tentativas."
     )
 
+
+# ============================================================
+# DETALHES DO CONTRATO
+# ============================================================
 
 def consultar_detalhes_contrato(id_contrato):
 
@@ -273,7 +785,9 @@ def consultar_detalhes_contrato(id_contrato):
 
             for item in aditivos:
 
-                item["tipoDocumentoNome"] = "Termo Aditivo"
+                item["tipoDocumentoNome"] = (
+                    "Termo Aditivo"
+                )
 
                 lista_final.append(item)
 
@@ -293,6 +807,10 @@ def consultar_detalhes_contrato(id_contrato):
         return []
 
 
+# ============================================================
+# EXTRAÇÃO
+# ============================================================
+
 def extrair_registros(data):
 
     if isinstance(data, list):
@@ -311,11 +829,14 @@ def extrair_registros(data):
                 chave in data
                 and isinstance(data[chave], list)
             ):
-
                 return data[chave]
 
     return []
 
+
+# ============================================================
+# TRATAMENTO DATAFRAME
+# ============================================================
 
 def tratar_dataframe(df):
 
@@ -345,6 +866,10 @@ def tratar_dataframe(df):
 
     return df_tratado
 
+
+# ============================================================
+# PAGINAÇÃO
+# ============================================================
 
 def consultar_paginas_rapido(
     url,
@@ -391,10 +916,11 @@ def consultar_paginas_rapido(
                 params_p
             )
 
-            return extrair_registros(dados)
+            return extrair_registros(
+                dados
+            )
 
         except Exception:
-
             return []
 
     with ThreadPoolExecutor(
@@ -404,7 +930,10 @@ def consultar_paginas_rapido(
         resultados = list(
             executor.map(
                 buscar_pagina,
-                range(2, max_paginas + 1)
+                range(
+                    2,
+                    max_paginas + 1
+                )
             )
         )
 
@@ -420,1210 +949,8 @@ def consultar_paginas_rapido(
     return todos_registros
 
 
-def obter_dados_registro(row, tipo):
-
-    id_pncp = row.get(
-        "numeroControlePNCP",
-        row.get(
-            "numeroControlePNCPAta",
-            row.get(
-                "numeroControlePNCPCompra",
-                "N/D"
-            )
-        )
-    )
-
-    if tipo == "Atas de Registro de Preços":
-
-        processo = row.get(
-            "numeroAtaRegistroPreco",
-            "N/D"
-        )
-
-        info_extra = (
-            f"Vigência: "
-            f"Início: {row.get('vigenciaInicio', 'N/D')} | "
-            f"Fim: {row.get('vigenciaFim', 'N/D')}"
-        )
-
-    elif tipo == "Contratos":
-
-        processo = row.get(
-            "processo",
-            "N/D"
-        )
-
-        valor = row.get(
-            "valorGlobal",
-            row.get(
-                "valorInicial",
-                0
-            )
-        )
-
-        valor_fmt = formatar_moeda_br(valor)
-
-        info_extra = (
-            f"Fornecedor: "
-            f"{row.get('nomeRazaoSocialFornecedor', 'N/D')} | "
-            f"Valor: {valor_fmt}"
-        )
-
-    else:
-
-        processo = row.get(
-            "processo",
-            "N/D"
-        )
-
-        valor = row.get(
-            "valorTotalHomologado",
-            row.get(
-                "valorTotalEstimado",
-                0
-            )
-        )
-
-        valor_fmt = formatar_moeda_br(valor)
-
-        info_extra = (
-            f"Responsável: "
-            f"{row.get('usuarioNome', 'N/D')} | "
-            f"Valor: {valor_fmt}"
-        )
-
-    return (
-        str(id_pncp),
-        str(processo),
-        info_extra,
-        str(
-            row.get(
-                "objetoContrato"
-                if tipo == "Contratos"
-                else "objetoCompra",
-                "N/D"
-            )
-        )
-    )
-
-
 # ============================================================
-# DADOS PRINCIPAIS PARA WORD/PDF
-# ============================================================
-
-def preparar_dados_relatorio(df, tipo):
-
-    dados = []
-
-    for _, row in df.iterrows():
-
-        id_pncp, processo, info_extra, objeto = (
-            obter_dados_registro(
-                row,
-                tipo
-            )
-        )
-
-        if tipo == "Contratos":
-
-            fornecedor = row.get(
-                "nomeRazaoSocialFornecedor",
-                "N/D"
-            )
-
-            valor = row.get(
-                "valorGlobal",
-                row.get(
-                    "valorInicial",
-                    0
-                )
-            )
-
-            dados.append({
-                "ID PNCP": id_pncp,
-                "Processo": str(processo),
-                "Fornecedor": str(fornecedor),
-                "Valor": formatar_moeda_br(valor),
-                "Objeto": str(objeto)
-            })
-
-        elif tipo == "Atas de Registro de Preços":
-
-            dados.append({
-                "ID PNCP": id_pncp,
-                "Ata": str(processo),
-                "Vigência": info_extra.replace(
-                    "Vigência: ",
-                    ""
-                ),
-                "Objeto": str(objeto)
-            })
-
-        else:
-
-            modalidade = row.get(
-                "modalidadeNome",
-                "N/D"
-            )
-
-            valor = row.get(
-                "valorTotalHomologado",
-                row.get(
-                    "valorTotalEstimado",
-                    0
-                )
-            )
-
-            dados.append({
-                "ID PNCP": id_pncp,
-                "Processo": str(processo),
-                "Modalidade": str(modalidade),
-                "Valor": formatar_moeda_br(valor),
-                "Objeto": str(objeto)
-            })
-
-    return dados
-
-
-# ============================================================
-# WORD — RELATÓRIO EXECUTIVO
-# ============================================================
-
-def gerar_word(
-    df,
-    tipo,
-    data_inicio,
-    data_fim
-):
-
-    doc = Document()
-
-    # --------------------------------------------------------
-    # CONFIGURAÇÃO DA PÁGINA
-    # --------------------------------------------------------
-
-    section = doc.sections[0]
-
-    section.orientation = WD_ORIENT.LANDSCAPE
-
-    section.page_width = Inches(11.69)
-    section.page_height = Inches(8.27)
-
-    section.top_margin = Inches(0.55)
-    section.bottom_margin = Inches(0.55)
-    section.left_margin = Inches(0.45)
-    section.right_margin = Inches(0.45)
-
-    # --------------------------------------------------------
-    # TÍTULO
-    # --------------------------------------------------------
-
-    p = doc.add_paragraph()
-
-    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-
-    run = p.add_run(
-        "RELATÓRIO EXECUTIVO\n"
-        "CONTRATAÇÕES PÚBLICAS"
-    )
-
-    run.bold = True
-    run.font.size = Pt(18)
-    run.font.color.rgb = RGBColor(
-        0,
-        51,
-        102
-    )
-
-    p2 = doc.add_paragraph()
-
-    p2.alignment = WD_ALIGN_PARAGRAPH.CENTER
-
-    run = p2.add_run(
-        "Prefeitura Municipal de Rio das Pedras / SP"
-    )
-
-    run.bold = True
-    run.font.size = Pt(11)
-
-    # --------------------------------------------------------
-    # INFORMAÇÕES DA CONSULTA
-    # --------------------------------------------------------
-
-    tabela_info = doc.add_table(
-        rows=2,
-        cols=4
-    )
-
-    tabela_info.alignment = (
-        WD_TABLE_ALIGNMENT.CENTER
-    )
-
-    tabela_info.style = "Table Grid"
-
-    informacoes = [
-        ("Tipo de Consulta", tipo),
-        (
-            "Período",
-            f"{data_inicio.strftime('%d/%m/%Y')} "
-            f"a {data_fim.strftime('%d/%m/%Y')}"
-        ),
-        (
-            "Total de Registros",
-            str(len(df))
-        ),
-        (
-            "Data do Relatório",
-            datetime.date.today().strftime(
-                "%d/%m/%Y"
-            )
-        )
-    ]
-
-    for i, (campo, valor) in enumerate(
-        informacoes
-    ):
-
-        col = i % 4
-
-        tabela_info.cell(
-            0,
-            col
-        ).text = campo
-
-        tabela_info.cell(
-            1,
-            col
-        ).text = valor
-
-        for run in tabela_info.cell(
-            0,
-            col
-        ).paragraphs[0].runs:
-
-            run.bold = True
-            run.font.size = Pt(8)
-
-        for run in tabela_info.cell(
-            1,
-            col
-        ).paragraphs[0].runs:
-
-            run.font.size = Pt(9)
-
-    doc.add_paragraph()
-
-    # --------------------------------------------------------
-    # VALOR TOTAL
-    # --------------------------------------------------------
-
-    colunas_valor = [
-        "valorGlobal",
-        "valorInicial",
-        "valorTotalHomologado",
-        "valorTotalEstimado"
-    ]
-
-    coluna_valor = next(
-        (
-            c for c in colunas_valor
-            if c in df.columns
-        ),
-        None
-    )
-
-    if coluna_valor:
-
-        total_valor = pd.to_numeric(
-            df[coluna_valor],
-            errors="coerce"
-        ).fillna(0).sum()
-
-        p_valor = doc.add_paragraph()
-
-        p_valor.alignment = (
-            WD_ALIGN_PARAGRAPH.CENTER
-        )
-
-        run = p_valor.add_run(
-            "VALOR TOTAL ENVOLVIDO: "
-            f"{formatar_moeda_br(total_valor)}"
-        )
-
-        run.bold = True
-        run.font.size = Pt(13)
-        run.font.color.rgb = RGBColor(
-            0,
-            102,
-            51
-        )
-
-    # --------------------------------------------------------
-    # PRINCIPAIS REGISTROS
-    # --------------------------------------------------------
-
-    doc.add_heading(
-        "Principais Registros",
-        level=2
-    )
-
-    dados = preparar_dados_relatorio(
-        df,
-        tipo
-    )
-
-    # Relatório executivo: máximo 50 registros
-    dados = dados[:50]
-
-    if dados:
-
-        colunas = list(
-            dados[0].keys()
-        )
-
-        tabela = doc.add_table(
-            rows=1,
-            cols=len(colunas)
-        )
-
-        tabela.alignment = (
-            WD_TABLE_ALIGNMENT.CENTER
-        )
-
-        tabela.style = "Table Grid"
-
-        # Larguras específicas
-        if tipo == "Contratos":
-
-            larguras = [
-                1.65,
-                1.20,
-                2.25,
-                1.15,
-                5.10
-            ]
-
-        elif tipo == "Atas de Registro de Preços":
-
-            larguras = [
-                2.00,
-                1.60,
-                2.20,
-                5.55
-            ]
-
-        else:
-
-            larguras = [
-                1.80,
-                1.30,
-                2.00,
-                1.20,
-                5.05
-            ]
-
-        # Cabeçalho
-        for i, coluna in enumerate(
-            colunas
-        ):
-
-            cell = tabela.rows[0].cells[i]
-
-            cell.text = coluna
-
-            cell.width = Inches(
-                larguras[i]
-            )
-
-            for run in cell.paragraphs[0].runs:
-
-                run.bold = True
-                run.font.size = Pt(8)
-                run.font.color.rgb = (
-                    RGBColor(
-                        255,
-                        255,
-                        255
-                    )
-                )
-
-        # Dados
-        for item in dados:
-
-            row_cells = tabela.add_row().cells
-
-            for i, coluna in enumerate(
-                colunas
-            ):
-
-                valor = str(
-                    item.get(
-                        coluna,
-                        ""
-                    )
-                )
-
-                # Mantém o objeto em tamanho
-                # razoável para relatório executivo
-                if coluna == "Objeto" and len(valor) > 500:
-
-                    valor = (
-                        valor[:497]
-                        + "..."
-                    )
-
-                row_cells[i].text = valor
-
-                row_cells[i].width = Inches(
-                    larguras[i]
-                )
-
-                row_cells[i].vertical_alignment = (
-                    WD_CELL_VERTICAL_ALIGNMENT.TOP
-                )
-
-                for paragraph in row_cells[i].paragraphs:
-
-                    paragraph.alignment = (
-                        WD_ALIGN_PARAGRAPH.LEFT
-                    )
-
-                    for run in paragraph.runs:
-
-                        run.font.size = Pt(7.5)
-
-    # --------------------------------------------------------
-    # OBSERVAÇÃO
-    # --------------------------------------------------------
-
-    doc.add_paragraph()
-
-    p_obs = doc.add_paragraph()
-
-    run = p_obs.add_run(
-        "Observação: este relatório apresenta os "
-        "principais dados retornados pelo Portal "
-        "Nacional de Contratações Públicas (PNCP). "
-        "Para análise completa dos registros, "
-        "consulte também a planilha Excel ou o "
-        "arquivo CSV disponibilizado."
-    )
-
-    run.font.size = Pt(8)
-    run.italic = True
-
-    # --------------------------------------------------------
-    # RODAPÉ
-    # --------------------------------------------------------
-
-    footer = section.footer
-
-    p_footer = footer.paragraphs[0]
-
-    p_footer.alignment = (
-        WD_ALIGN_PARAGRAPH.CENTER
-    )
-
-    run = p_footer.add_run(
-        "Portal PNCP - Rio das Pedras/SP"
-    )
-
-    run.font.size = Pt(8)
-    run.font.color.rgb = RGBColor(
-        100,
-        100,
-        100
-    )
-
-    # --------------------------------------------------------
-    # SALVAR
-    # --------------------------------------------------------
-
-    buffer = io.BytesIO()
-
-    doc.save(buffer)
-
-    buffer.seek(0)
-
-    return buffer.getvalue()
-
-
-# ============================================================
-# PDF — TRATAMENTO DE TEXTO
-# ============================================================
-
-def limpar_texto_pdf(texto):
-
-    if texto is None:
-        return ""
-
-    texto = str(texto)
-
-    # Caracteres que não existem na fonte Arial
-    substituicoes = {
-        "\u2018": "'",
-        "\u2019": "'",
-        "\u201c": '"',
-        "\u201d": '"',
-        "\u2013": "-",
-        "\u2014": "-",
-        "\u2026": "...",
-        "\u00a0": " ",
-        "\u2022": "-",
-        "\u00ba": "o",
-        "\u00aa": "a"
-    }
-
-    for origem, destino in substituicoes.items():
-
-        texto = texto.replace(
-            origem,
-            destino
-        )
-
-    return (
-        texto
-        .encode(
-            "latin-1",
-            "replace"
-        )
-        .decode("latin-1")
-    )
-
-
-# ============================================================
-# PDF — CLASSE
-# ============================================================
-
-class RelatorioPDF(FPDF):
-
-    def header(self):
-
-        self.set_font(
-            "Arial",
-            "B",
-            14
-        )
-
-        self.cell(
-            0,
-            7,
-            "RELATORIO EXECUTIVO",
-            ln=True,
-            align="C"
-        )
-
-        self.set_font(
-            "Arial",
-            "B",
-            11
-        )
-
-        self.cell(
-            0,
-            6,
-            "CONTRATACOES PUBLICAS",
-            ln=True,
-            align="C"
-        )
-
-        self.set_font(
-            "Arial",
-            "",
-            9
-        )
-
-        self.cell(
-            0,
-            5,
-            "Prefeitura Municipal de Rio das Pedras / SP",
-            ln=True,
-            align="C"
-        )
-
-        self.ln(3)
-
-        self.line(
-            10,
-            self.get_y(),
-            287,
-            self.get_y()
-        )
-
-        self.ln(4)
-
-    def footer(self):
-
-        self.set_y(-12)
-
-        self.set_font(
-            "Arial",
-            "",
-            8
-        )
-
-        self.cell(
-            0,
-            8,
-            f"Portal PNCP - Rio das Pedras/SP | "
-            f"Pagina {self.page_no()}",
-            align="C"
-        )
-
-
-# ============================================================
-# PDF — CALCULAR ALTURA DA LINHA
-# ============================================================
-
-def calcular_altura_linha_pdf(
-    pdf,
-    valores,
-    larguras,
-    altura_linha=4
-):
-
-    maior_linhas = 1
-
-    for valor, largura in zip(
-        valores,
-        larguras
-    ):
-
-        texto = limpar_texto_pdf(
-            valor
-        )
-
-        linhas = pdf.multi_cell(
-            largura,
-            altura_linha,
-            texto,
-            border=0,
-            split_only=True
-        )
-
-        if isinstance(linhas, list):
-
-            quantidade = max(
-                1,
-                len(linhas)
-            )
-
-        else:
-
-            quantidade = 1
-
-        maior_linhas = max(
-            maior_linhas,
-            quantidade
-        )
-
-    return (
-        maior_linhas
-        * altura_linha
-        + 2
-    )
-
-
-# ============================================================
-# PDF — DESENHAR LINHA DA TABELA
-# ============================================================
-
-def desenhar_linha_pdf(
-    pdf,
-    valores,
-    larguras,
-    altura_linha=4,
-    negrito=False
-):
-
-    y_inicial = pdf.get_y()
-
-    altura = calcular_altura_linha_pdf(
-        pdf,
-        valores,
-        larguras,
-        altura_linha
-    )
-
-    # Verifica quebra de página
-    if (
-        y_inicial + altura
-        > pdf.page_break_trigger
-    ):
-
-        pdf.add_page()
-
-        y_inicial = pdf.get_y()
-
-    # Fonte
-    pdf.set_font(
-        "Arial",
-        "B" if negrito else "",
-        7.5
-    )
-
-    x_atual = pdf.get_x()
-
-    for valor, largura in zip(
-        valores,
-        larguras
-    ):
-
-        texto = limpar_texto_pdf(
-            valor
-        )
-
-        pdf.set_xy(
-            x_atual,
-            y_inicial
-        )
-
-        pdf.multi_cell(
-            largura,
-            altura_linha,
-            texto,
-            border=1,
-            align="L",
-            fill=False
-        )
-
-        x_atual += largura
-
-    pdf.set_xy(
-        pdf.l_margin,
-        y_inicial + altura
-    )
-
-    return altura
-
-
-# ============================================================
-# PDF — CABEÇALHO DA TABELA
-# ============================================================
-
-def desenhar_cabecalho_tabela(
-    pdf,
-    colunas,
-    larguras
-):
-
-    pdf.set_font(
-        "Arial",
-        "B",
-        7.5
-    )
-
-    y = pdf.get_y()
-
-    altura = 8
-
-    x = pdf.get_x()
-
-    for titulo, largura in zip(
-        colunas,
-        larguras
-    ):
-
-        pdf.set_xy(
-            x,
-            y
-        )
-
-        pdf.multi_cell(
-            largura,
-            altura,
-            limpar_texto_pdf(titulo),
-            border=1,
-            align="C"
-        )
-
-        x += largura
-
-    pdf.set_xy(
-        pdf.l_margin,
-        y + altura
-    )
-
-
-# ============================================================
-# PDF — RELATÓRIO EXECUTIVO
-# ============================================================
-
-def gerar_pdf(
-    df,
-    tipo,
-    data_inicio,
-    data_fim
-):
-
-    pdf = RelatorioPDF(
-        orientation="L",
-        unit="mm",
-        format="A4"
-    )
-
-    pdf.set_auto_page_break(
-        auto=True,
-        margin=15
-    )
-
-    pdf.add_page()
-
-    # --------------------------------------------------------
-    # RESUMO
-    # --------------------------------------------------------
-
-    pdf.set_font(
-        "Arial",
-        "B",
-        9
-    )
-
-    pdf.cell(
-        38,
-        6,
-        "Tipo de Consulta:"
-    )
-
-    pdf.set_font(
-        "Arial",
-        "",
-        9
-    )
-
-    pdf.cell(
-        65,
-        6,
-        limpar_texto_pdf(tipo)
-    )
-
-    pdf.set_font(
-        "Arial",
-        "B",
-        9
-    )
-
-    pdf.cell(
-        20,
-        6,
-        "Periodo:"
-    )
-
-    pdf.set_font(
-        "Arial",
-        "",
-        9
-    )
-
-    periodo = (
-        f"{data_inicio.strftime('%d/%m/%Y')} "
-        f"a {data_fim.strftime('%d/%m/%Y')}"
-    )
-
-    pdf.cell(
-        45,
-        6,
-        periodo
-    )
-
-    pdf.set_font(
-        "Arial",
-        "B",
-        9
-    )
-
-    pdf.cell(
-        32,
-        6,
-        "Total de Registros:"
-    )
-
-    pdf.set_font(
-        "Arial",
-        "",
-        9
-    )
-
-    pdf.cell(
-        15,
-        6,
-        str(len(df))
-    )
-
-    pdf.ln(7)
-
-    # --------------------------------------------------------
-    # VALOR TOTAL
-    # --------------------------------------------------------
-
-    colunas_valor = [
-        "valorGlobal",
-        "valorInicial",
-        "valorTotalHomologado",
-        "valorTotalEstimado"
-    ]
-
-    coluna_valor = next(
-        (
-            c for c in colunas_valor
-            if c in df.columns
-        ),
-        None
-    )
-
-    if coluna_valor:
-
-        total_valor = pd.to_numeric(
-            df[coluna_valor],
-            errors="coerce"
-        ).fillna(0).sum()
-
-        pdf.set_font(
-            "Arial",
-            "B",
-            10
-        )
-
-        pdf.cell(
-            45,
-            7,
-            "VALOR TOTAL ENVOLVIDO:"
-        )
-
-        pdf.set_font(
-            "Arial",
-            "B",
-            10
-        )
-
-        pdf.cell(
-            60,
-            7,
-            limpar_texto_pdf(
-                formatar_moeda_br(
-                    total_valor
-                )
-            )
-        )
-
-        pdf.ln(8)
-
-    # --------------------------------------------------------
-    # TÍTULO DA TABELA
-    # --------------------------------------------------------
-
-    pdf.set_font(
-        "Arial",
-        "B",
-        10
-    )
-
-    pdf.cell(
-        0,
-        7,
-        "PRINCIPAIS REGISTROS",
-        ln=True
-    )
-
-    pdf.ln(2)
-
-    # --------------------------------------------------------
-    # DADOS
-    # --------------------------------------------------------
-
-    dados = preparar_dados_relatorio(
-        df,
-        tipo
-    )
-
-    dados = dados[:50]
-
-    if not dados:
-
-        pdf.set_font(
-            "Arial",
-            "",
-            9
-        )
-
-        pdf.cell(
-            0,
-            7,
-            "Nenhum registro disponivel.",
-            ln=True
-        )
-
-    else:
-
-        # ----------------------------------------------------
-        # COLUNAS
-        # ----------------------------------------------------
-
-        if tipo == "Contratos":
-
-            colunas = [
-                "ID PNCP",
-                "Processo",
-                "Fornecedor",
-                "Valor",
-                "Objeto"
-            ]
-
-            larguras = [
-                40,
-                25,
-                48,
-                28,
-                146
-            ]
-
-        elif tipo == "Atas de Registro de Preços":
-
-            colunas = [
-                "ID PNCP",
-                "Ata",
-                "Vigencia",
-                "Objeto"
-            ]
-
-            larguras = [
-                45,
-                35,
-                50,
-                157
-            ]
-
-        else:
-
-            colunas = [
-                "ID PNCP",
-                "Processo",
-                "Modalidade",
-                "Valor",
-                "Objeto"
-            ]
-
-            larguras = [
-                40,
-                25,
-                42,
-                28,
-                152
-            ]
-
-        # ----------------------------------------------------
-        # CABEÇALHO
-        # ----------------------------------------------------
-
-        desenhar_cabecalho_tabela(
-            pdf,
-            colunas,
-            larguras
-        )
-
-        # ----------------------------------------------------
-        # REGISTROS
-        # ----------------------------------------------------
-
-        for item in dados:
-
-            valores = [
-                str(
-                    item.get(
-                        coluna,
-                        ""
-                    )
-                )
-                for coluna in colunas
-            ]
-
-            # Limita somente textos muito extensos
-            # para preservar o caráter executivo.
-            for i, coluna in enumerate(colunas):
-
-                if coluna == "Objeto":
-
-                    if len(valores[i]) > 700:
-
-                        valores[i] = (
-                            valores[i][:697]
-                            + "..."
-                        )
-
-            y_antes = pdf.get_y()
-
-            altura = desenhar_linha_pdf(
-                pdf,
-                valores,
-                larguras,
-                altura_linha=4,
-                negrito=False
-            )
-
-            # Se houve quebra automática de página,
-            # desenha novamente o cabeçalho.
-            if (
-                y_antes + altura
-                > pdf.page_break_trigger
-            ):
-
-                desenhar_cabecalho_tabela(
-                    pdf,
-                    colunas,
-                    larguras
-                )
-
-        # ----------------------------------------------------
-        # OBSERVAÇÃO
-        # ----------------------------------------------------
-
-        pdf.ln(5)
-
-        pdf.set_font(
-            "Arial",
-            "I",
-            7.5
-        )
-
-        observacao = (
-            "Observacao: este relatorio apresenta "
-            "os principais dados retornados pelo "
-            "Portal Nacional de Contratacoes Publicas "
-            "(PNCP). Para analise completa dos "
-            "registros, consulte tambem os arquivos "
-            "Excel e CSV."
-        )
-
-        pdf.multi_cell(
-            0,
-            4,
-            limpar_texto_pdf(
-                observacao
-            )
-        )
-
-    # --------------------------------------------------------
-    # SAÍDA
-    # --------------------------------------------------------
-
-    pdf_bytes = pdf.output(
-        dest="S"
-    )
-
-    if isinstance(
-        pdf_bytes,
-        str
-    ):
-
-        pdf_bytes = pdf_bytes.encode(
-            "latin-1"
-        )
-
-    return pdf_bytes
-
-
-# ============================================================
-# INTERFACE
+# CONSULTA
 # ============================================================
 
 if st.sidebar.button(
@@ -1643,9 +970,7 @@ if st.sidebar.button(
             f"{BASE_URL}/contratacoes/publicacao"
     }
 
-    endpoint = endpoints[
-        tipo_consulta
-    ]
+    endpoint = endpoints[tipo_consulta]
 
     tamanho_pagina = (
         50
@@ -1662,8 +987,7 @@ if st.sidebar.button(
         "dataFinal":
             data_fim.strftime("%Y%m%d"),
 
-        "pagina":
-            1,
+        "pagina": 1,
 
         "tamanhoPagina":
             tamanho_pagina
@@ -1688,20 +1012,20 @@ if st.sidebar.button(
 
     elif tipo_consulta == "Contratos":
 
-        params[
-            "cnpjOrgao"
-        ] = CNPJ_RIO_DAS_PEDRAS
+        params["cnpjOrgao"] = (
+            CNPJ_RIO_DAS_PEDRAS
+        )
 
     elif tipo_consulta == "Atas de Registro de Preços":
 
-        params[
-            "cnpj"
-        ] = CNPJ_RIO_DAS_PEDRAS
+        params["cnpj"] = (
+            CNPJ_RIO_DAS_PEDRAS
+        )
 
     try:
 
         with st.spinner(
-            "🔄 Buscando e tratando dados em paralelo no PNCP..."
+            "🔄 Buscando dados no PNCP..."
         ):
 
             registros = consultar_paginas_rapido(
@@ -1716,6 +1040,10 @@ if st.sidebar.button(
             df_temp = tratar_dataframe(
                 df_temp
             )
+
+            # ------------------------------------------------
+            # FILTRO EXTRA PARA CONTRATOS
+            # ------------------------------------------------
 
             if (
                 tipo_consulta == "Contratos"
@@ -1750,9 +1078,9 @@ if st.sidebar.button(
 
                         if mask.any():
 
-                            df_temp = df_temp[
-                                mask
-                            ]
+                            df_temp = (
+                                df_temp[mask]
+                            )
 
                             break
 
@@ -1770,11 +1098,12 @@ if st.sidebar.button(
 
 
 # ============================================================
-# EXIBIÇÃO DOS RESULTADOS
+# EXIBIÇÃO
 # ============================================================
 
 if (
-    st.session_state.df_resultado is not None
+    st.session_state.df_resultado
+    is not None
     and not st.session_state.df_resultado.empty
 ):
 
@@ -1782,8 +1111,12 @@ if (
 
     st.success(
         f"📊 Exibindo {len(df)} registros "
-        f"para Rio das Pedras/SP."
+        "para Rio das Pedras/SP."
     )
+
+    # --------------------------------------------------------
+    # MÉTRICAS
+    # --------------------------------------------------------
 
     col_m1, col_m2 = st.columns(2)
 
@@ -1794,11 +1127,14 @@ if (
 
     coluna_valor = next(
         (
-            c for c in [
+            c
+            for c in [
                 "valorGlobal",
                 "valorInicial",
+                "valorTotal",
                 "valorTotalHomologado",
-                "valorTotalEstimado"
+                "valorTotalEstimado",
+                "valorAta"
             ]
             if c in df.columns
         ),
@@ -1810,7 +1146,7 @@ if (
         total_valor = pd.to_numeric(
             df[coluna_valor],
             errors="coerce"
-        ).fillna(0).sum()
+        ).sum()
 
         col_m2.metric(
             "Valor Total Envolvido",
@@ -1830,17 +1166,11 @@ if (
 
 
     # ========================================================
-    # OPÇÕES DE EXPORTAÇÃO
+    # EXPORTAÇÃO
     # ========================================================
 
     st.markdown(
         "### 📥 Opções de Exportação"
-    )
-
-    st.caption(
-        "Excel e CSV contêm a base completa. "
-        "Word e PDF apresentam um relatório executivo "
-        "com os principais dados."
     )
 
     cols = st.columns(4)
@@ -1851,54 +1181,16 @@ if (
         .replace("/", "_")
     )
 
-
-    # ========================================================
+    # --------------------------------------------------------
     # EXCEL
-    # ========================================================
+    # --------------------------------------------------------
 
     buffer_xlsx = io.BytesIO()
 
-    with pd.ExcelWriter(
+    df.to_excel(
         buffer_xlsx,
-        engine="openpyxl"
-    ) as writer:
-
-        df.to_excel(
-            writer,
-            index=False,
-            sheet_name="Dados"
-        )
-
-        worksheet = writer.sheets[
-            "Dados"
-        ]
-
-        for coluna in worksheet.columns:
-
-            tamanho = 0
-
-            letra = coluna[0].column_letter
-
-            for celula in coluna:
-
-                try:
-
-                    tamanho = max(
-                        tamanho,
-                        len(str(celula.value))
-                    )
-
-                except Exception:
-                    pass
-
-            worksheet.column_dimensions[
-                letra
-            ].width = min(
-                tamanho + 2,
-                60
-            )
-
-    buffer_xlsx.seek(0)
+        index=False
+    )
 
     cols[0].download_button(
         "📊 Excel (.xlsx)",
@@ -1910,21 +1202,18 @@ if (
         )
     )
 
-
-    # ========================================================
+    # --------------------------------------------------------
     # CSV
-    # ========================================================
+    # --------------------------------------------------------
 
-    csv_bytes = df.to_csv(
+    csv_data = df.to_csv(
         index=False,
         encoding="utf-8-sig"
-    ).encode(
-        "utf-8-sig"
     )
 
     cols[1].download_button(
         "📄 CSV (.csv)",
-        csv_bytes,
+        csv_data,
         f"{nome}_Rio_Das_Pedras.csv",
         mime="text/csv"
     )
@@ -1934,16 +1223,157 @@ if (
     # WORD
     # ========================================================
 
-    word_bytes = gerar_word(
-        df,
-        tipo_consulta,
-        data_inicio,
-        data_fim
+    doc = Document()
+
+    # Margens
+    section = doc.sections[0]
+
+    section.top_margin = Pt(40)
+    section.bottom_margin = Pt(40)
+    section.left_margin = Pt(45)
+    section.right_margin = Pt(45)
+
+    # Título
+    p_titulo = doc.add_paragraph()
+
+    p_titulo.alignment = 1
+
+    r_titulo = p_titulo.add_run(
+        f"RELATÓRIO DE {tipo_consulta.upper()}"
     )
+
+    r_titulo.bold = True
+    r_titulo.font.size = Pt(16)
+    r_titulo.font.color.rgb = RGBColor(
+        0,
+        51,
+        102
+    )
+
+    p_subtitulo = doc.add_paragraph()
+
+    p_subtitulo.alignment = 1
+
+    r = p_subtitulo.add_run(
+        "Prefeitura Municipal de Rio das Pedras/SP"
+    )
+
+    r.bold = True
+    r.font.size = Pt(11)
+
+    # Informações gerais
+    doc.add_paragraph(
+        f"Período da consulta: "
+        f"{data_inicio.strftime('%d/%m/%Y')} "
+        f"a "
+        f"{data_fim.strftime('%d/%m/%Y')}"
+    )
+
+    doc.add_paragraph(
+        f"Total de registros encontrados: "
+        f"{len(df)}"
+    )
+
+    doc.add_paragraph("")
+
+    doc.add_heading(
+        "Principais Registros",
+        level=2
+    )
+
+    # --------------------------------------------------------
+    # DADOS DOS REGISTROS
+    # --------------------------------------------------------
+
+    for pos, (_, row) in enumerate(
+        df.head(50).iterrows(),
+        start=1
+    ):
+
+        dados = obter_dados_registro(
+            row,
+            tipo_consulta
+        )
+
+        tabela = doc.add_table(
+            rows=0,
+            cols=2
+        )
+
+        tabela.style = "Table Grid"
+
+        campos_word = [
+            ("Registro", f"{pos}"),
+            ("Número", dados["numero"]),
+            ("Controle PNCP", dados["id_pncp"]),
+            ("Processo", dados["processo"]),
+            ("Objeto", dados["objeto"]),
+            ("Fornecedor", dados["fornecedor"]),
+            (
+                "CNPJ/CPF Fornecedor",
+                dados["cnpj_fornecedor"]
+            ),
+            ("Valor", dados["valor"]),
+            (
+                "Data de Assinatura",
+                dados["data_assinatura"]
+            ),
+            (
+                "Início da Vigência",
+                dados["vigencia_inicio"]
+            ),
+            (
+                "Fim da Vigência",
+                dados["vigencia_fim"]
+            ),
+            ("Situação", dados["situacao"]),
+            ("Órgão", dados["orgao"]),
+            ("Unidade", dados["unidade"]),
+        ]
+
+        for nome_campo, valor_campo in campos_word:
+
+            cells = tabela.add_row().cells
+
+            cells[0].text = nome_campo
+            cells[1].text = str(
+                valor_campo
+            )
+
+            for run in cells[0].paragraphs[0].runs:
+
+                run.bold = True
+                run.font.size = Pt(9)
+
+            for run in cells[1].paragraphs[0].runs:
+
+                run.font.size = Pt(9)
+
+        doc.add_paragraph("")
+
+    # Rodapé
+    section = doc.sections[0]
+
+    footer = section.footer
+
+    p_footer = footer.paragraphs[0]
+
+    p_footer.alignment = 1
+
+    p_footer.add_run(
+        "Consulta realizada no Portal Nacional "
+        "de Contratações Públicas – PNCP"
+    ).font.size = Pt(8)
+
+    buffer_docx = io.BytesIO()
+
+    doc.save(buffer_docx)
+
+    buffer_docx.seek(0)
 
     cols[2].download_button(
         "📝 Word (.docx)",
-        word_bytes,
+        buffer_docx.getvalue(),
         f"Relatorio_{nome}.docx",
         mime=(
             "application/vnd.openxmlformats-officedocument."
@@ -1956,12 +1386,232 @@ if (
     # PDF
     # ========================================================
 
-    pdf_bytes = gerar_pdf(
-        df,
-        tipo_consulta,
-        data_inicio,
-        data_fim
+    pdf = FPDF()
+
+    pdf.set_auto_page_break(
+        auto=True,
+        margin=15
     )
+
+    pdf.add_page()
+
+    # --------------------------------------------------------
+    # TÍTULO
+    # --------------------------------------------------------
+
+    pdf.set_font(
+        "Arial",
+        "B",
+        15
+    )
+
+    titulo_pdf = (
+        f"RELATORIO DE {tipo_consulta.upper()}"
+    )
+
+    titulo_pdf = (
+        titulo_pdf
+        .encode("latin-1", "replace")
+        .decode("latin-1")
+    )
+
+    pdf.cell(
+        0,
+        10,
+        txt=titulo_pdf,
+        ln=True,
+        align="C"
+    )
+
+    pdf.set_font(
+        "Arial",
+        "B",
+        10
+    )
+
+    pdf.cell(
+        0,
+        7,
+        txt=(
+            "Prefeitura Municipal de "
+            "Rio das Pedras / SP"
+        ),
+        ln=True,
+        align="C"
+    )
+
+    pdf.ln(5)
+
+    pdf.set_font(
+        "Arial",
+        size=9
+    )
+
+    periodo_pdf = (
+        f"Periodo: "
+        f"{data_inicio.strftime('%d/%m/%Y')} "
+        f"a "
+        f"{data_fim.strftime('%d/%m/%Y')}"
+    )
+
+    pdf.cell(
+        0,
+        6,
+        txt=periodo_pdf,
+        ln=True
+    )
+
+    pdf.cell(
+        0,
+        6,
+        txt=f"Total de registros: {len(df)}",
+        ln=True
+    )
+
+    pdf.ln(5)
+
+    # --------------------------------------------------------
+    # REGISTROS
+    # --------------------------------------------------------
+
+    for pos, (_, row) in enumerate(
+        df.head(50).iterrows(),
+        start=1
+    ):
+
+        dados = obter_dados_registro(
+            row,
+            tipo_consulta
+        )
+
+        pdf.set_font(
+            "Arial",
+            "B",
+            10
+        )
+
+        pdf.cell(
+            0,
+            7,
+            txt=f"Registro {pos}",
+            ln=True
+        )
+
+        pdf.set_font(
+            "Arial",
+            size=8
+        )
+
+        campos_pdf = [
+            (
+                "Numero",
+                dados["numero"]
+            ),
+            (
+                "Controle PNCP",
+                dados["id_pncp"]
+            ),
+            (
+                "Processo",
+                dados["processo"]
+            ),
+            (
+                "Objeto",
+                dados["objeto"]
+            ),
+            (
+                "Fornecedor",
+                dados["fornecedor"]
+            ),
+            (
+                "CNPJ/CPF Fornecedor",
+                dados["cnpj_fornecedor"]
+            ),
+            (
+                "Valor",
+                dados["valor"]
+            ),
+            (
+                "Data de Assinatura",
+                dados["data_assinatura"]
+            ),
+            (
+                "Inicio da Vigencia",
+                dados["vigencia_inicio"]
+            ),
+            (
+                "Fim da Vigencia",
+                dados["vigencia_fim"]
+            ),
+            (
+                "Situacao",
+                dados["situacao"]
+            ),
+            (
+                "Orgao",
+                dados["orgao"]
+            ),
+            (
+                "Unidade",
+                dados["unidade"]
+            ),
+        ]
+
+        for nome_campo, valor_campo in campos_pdf:
+
+            texto = (
+                f"{nome_campo}: "
+                f"{texto_valido(valor_campo)}"
+            )
+
+            texto = (
+                texto
+                .encode("latin-1", "replace")
+                .decode("latin-1")
+            )
+
+            pdf.multi_cell(
+                0,
+                5,
+                txt=texto
+            )
+
+        pdf.ln(4)
+
+    # --------------------------------------------------------
+    # RODAPÉ
+    # --------------------------------------------------------
+
+    pdf.set_font(
+        "Arial",
+        "I",
+        7
+    )
+
+    rodape = (
+        "Consulta realizada no Portal Nacional "
+        "de Contratacoes Publicas - PNCP"
+    )
+
+    pdf.cell(
+        0,
+        5,
+        txt=rodape,
+        ln=True,
+        align="C"
+    )
+
+    pdf_bytes = pdf.output(
+        dest="S"
+    )
+
+    if isinstance(
+        pdf_bytes,
+        str
+    ):
+        pdf_bytes = pdf_bytes.encode(
+            "latin-1"
+        )
 
     cols[3].download_button(
         "📕 PDF (.pdf)",
@@ -1971,11 +1621,123 @@ if (
     )
 
 
+    st.markdown("---")
+
+
+    # ========================================================
+    # CONSULTA DE ADITIVOS
+    # ========================================================
+
+    if tipo_consulta == "Contratos":
+
+        st.markdown(
+            "### 🔍 Consultar Aditivos / "
+            "Documentos por Contrato"
+        )
+
+        lista_contratos = df.apply(
+            lambda x:
+                f"{x.get('numeroControlePNCP')} "
+                f"- Proc: {x.get('processo')}",
+            axis=1
+        ).tolist()
+
+        contrato_selecionado = st.selectbox(
+            "Selecione um contrato:",
+            lista_contratos
+        )
+
+        numero_aditivo = st.text_input(
+            "Digite o número do aditivo (opcional):",
+            placeholder="Ex: 01/2026"
+        )
+
+        if st.button(
+            "Buscar Aditivos do Contrato"
+        ):
+
+            id_escolhido = (
+                contrato_selecionado
+                .split(" - ")[0]
+            )
+
+            with st.spinner(
+                "Buscando aditivos no PNCP..."
+            ):
+
+                aditivos = (
+                    consultar_detalhes_contrato(
+                        id_escolhido
+                    )
+                )
+
+                if aditivos:
+
+                    if numero_aditivo:
+
+                        aditivos = [
+                            d
+                            for d in aditivos
+                            if numero_aditivo
+                            in str(
+                                d.get(
+                                    "numero",
+                                    ""
+                                )
+                            )
+                        ]
+
+                    if aditivos:
+
+                        st.success(
+                            f"Encontrados "
+                            f"{len(aditivos)} "
+                            "documentos vinculados:"
+                        )
+
+                        for doc in aditivos:
+
+                            tipo_doc = doc.get(
+                                "tipoDocumentoNome",
+                                "Outro"
+                            )
+
+                            num_doc = doc.get(
+                                "numero",
+                                "S/N"
+                            )
+
+                            st.info(
+                                f"**Tipo:** "
+                                f"{tipo_doc} | "
+                                f"**Nº:** "
+                                f"{num_doc} | "
+                                f"**Data:** "
+                                f"{doc.get('dataPublicacao', 'N/D')}"
+                                f"\n\n"
+                                f"{doc.get('objeto', '')}"
+                            )
+
+                    else:
+
+                        st.warning(
+                            "Nenhum aditivo encontrado "
+                            "com este número para este contrato."
+                        )
+
+                else:
+
+                    st.warning(
+                        "Nenhum documento/aditivo "
+                        "encontrado para este contrato."
+                    )
+
+        st.markdown("---")
+
+
     # ========================================================
     # GRÁFICOS
     # ========================================================
-
-    st.markdown("---")
 
     st.markdown(
         "### 📈 Análise Gráfica"
@@ -1983,23 +1745,28 @@ if (
 
     coluna_data = next(
         (
-            c for c in [
+            c
+            for c in [
                 "dataPublicacao",
                 "dataAssinatura",
-                "dataInclusao"
+                "dataInclusao",
+                "dataPublicacaoPncp"
             ]
             if c in df.columns
         ),
         None
     )
 
-    coluna_valor = next(
+    coluna_valor_grafico = next(
         (
-            c for c in [
+            c
+            for c in [
                 "valorGlobal",
                 "valorInicial",
+                "valorTotal",
                 "valorTotalHomologado",
-                "valorTotalEstimado"
+                "valorTotalEstimado",
+                "valorAta"
             ]
             if c in df.columns
         ),
@@ -2046,7 +1813,7 @@ if (
 
             with aba2:
 
-                if coluna_valor:
+                if coluna_valor_grafico:
 
                     st.markdown(
                         f"#### Volume Financeiro de "
@@ -2054,10 +1821,10 @@ if (
                     )
 
                     df_grafico[
-                        coluna_valor
+                        coluna_valor_grafico
                     ] = pd.to_numeric(
                         df_grafico[
-                            coluna_valor
+                            coluna_valor_grafico
                         ],
                         errors="coerce"
                     ).fillna(0)
@@ -2065,7 +1832,7 @@ if (
                     st.bar_chart(
                         df_grafico
                         .groupby("mes_ano")[
-                            coluna_valor
+                            coluna_valor_grafico
                         ]
                         .sum()
                         .sort_index()
@@ -2074,7 +1841,8 @@ if (
                 else:
 
                     st.info(
-                        "ℹ️ Dados financeiros indisponíveis."
+                        "ℹ️ Dados financeiros "
+                        "indisponíveis."
                     )
 
         except Exception as e:
@@ -2083,12 +1851,17 @@ if (
                 f"ℹ️ Erro ao gerar gráficos: {e}"
             )
 
+    else:
+
+        st.info(
+            "ℹ️ Coluna de data não encontrada "
+            "para gerar o gráfico."
+        )
+
 
     # ========================================================
     # TABELA
     # ========================================================
-
-    st.markdown("---")
 
     st.markdown(
         "### 📋 Tabela de Dados Detalhada"
@@ -2102,15 +1875,16 @@ if (
 
 
 # ============================================================
-# NENHUM REGISTRO
+# RESULTADO VAZIO
 # ============================================================
 
 elif (
-    st.session_state.df_resultado is not None
+    st.session_state.df_resultado
+    is not None
     and st.session_state.df_resultado.empty
 ):
 
     st.warning(
-        "⚠️ Nenhum registro encontrado "
-        "para Rio das Pedras/SP no período selecionado."
+        "⚠️ Nenhum registro encontrado para "
+        "Rio das Pedras/SP no período selecionado."
     )
