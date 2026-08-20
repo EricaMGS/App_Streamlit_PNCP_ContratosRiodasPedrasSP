@@ -158,12 +158,24 @@ def consultar_pncp(url, params, max_tentativas=5):
     raise Exception("Falha de conexão com o PNCP após várias tentativas.")
 
 def consultar_detalhes_contrato(id_contrato):
-    """Busca documentos vinculados a um contrato específico (Aditivos/Apostilamentos)."""
-    url = f"{BASE_URL}/contratos/{id_contrato}/documentos"
+    """Busca o contrato completo no PNCP e extrai aditivos e apostilamentos."""
+    url = f"{BASE_URL}/contratos/{id_contrato}"
     try:
-        resp = requests.get(url, timeout=10)
+        resp = requests.get(url, timeout=15)
         if resp.status_code == 200:
-            return resp.json()
+            contrato = resp.json()
+            aditivos = contrato.get('termosAditivos', [])
+            apostilamentos = contrato.get('termosApostilamentos', [])
+            
+            lista_final = []
+            for item in aditivos:
+                item['tipoDocumentoNome'] = 'Termo Aditivo'
+                lista_final.append(item)
+            for item in apostilamentos:
+                item['tipoDocumentoNome'] = 'Termo de Apostilamento'
+                lista_final.append(item)
+                
+            return lista_final
         return []
     except:
         return []
@@ -200,7 +212,6 @@ def consultar_paginas_rapido(url, params, max_paginas=20):
     todos_registros = list(registros)
     tamanho = params.get("tamanhoPagina", 50)
     
-    # Se a primeira página veio menor que o tamanho máximo, não há outras páginas
     if len(registros) < tamanho:
         return todos_registros
 
@@ -213,14 +224,12 @@ def consultar_paginas_rapido(url, params, max_paginas=20):
         except:
             return []
 
-    # Dispara múltiplas requisições simultâneas (até 5 workers)
     with ThreadPoolExecutor(max_workers=5) as executor:
         resultados = list(executor.map(buscar_pagina, range(2, max_paginas + 1)))
         
     for res in resultados:
         if res:
             todos_registros.extend(res)
-            # Se alguma página veio incompleta, paramos de avançar nas próximas
             if len(res) < tamanho:
                 break
                 
@@ -372,21 +381,31 @@ if st.session_state.df_resultado is not None and not st.session_state.df_resulta
 
     st.markdown("---")
 
-    # CONSULTA DE ADITIVOS (APARECE APENAS SE FOR CONTRATOS)
+    # CONSULTA DE ADITIVOS E FILTRO POR NÚMERO (APARECE APENAS SE FOR CONTRATOS)
     if tipo_consulta == "Contratos":
         st.markdown("### 🔍 Consultar Aditivos / Documentos por Contrato")
         lista_contratos = df.apply(lambda x: f"{x.get('numeroControlePNCP')} - Proc: {x.get('processo')}", axis=1).tolist()
         contrato_selecionado = st.selectbox("Selecione um contrato:", lista_contratos)
+        
+        # Campo para digitar o número do aditivo
+        numero_aditivo = st.text_input("Digite o número do aditivo (opcional):", placeholder="Ex: 01/2026")
         
         if st.button("Buscar Aditivos do Contrato"):
             id_escolhido = contrato_selecionado.split(" - ")[0]
             with st.spinner("Buscando aditivos no PNCP..."):
                 aditivos = consultar_detalhes_contrato(id_escolhido)
                 if aditivos:
-                    st.success(f"Encontrados {len(aditivos)} documentos vinculados:")
-                    for doc in aditivos:
-                        tipo_doc = doc.get('tipoDocumentoNome', 'Outro')
-                        st.info(f"**Tipo:** {tipo_doc} | **Data:** {doc.get('dataPublicacao', 'N/D')}\n\n{doc.get('objeto', '')}")
+                    if numero_aditivo:
+                        aditivos = [d for d in aditivos if numero_aditivo in str(d.get('numero', ''))]
+                    
+                    if aditivos:
+                        st.success(f"Encontrados {len(aditivos)} documentos vinculados:")
+                        for doc in aditivos:
+                            tipo_doc = doc.get('tipoDocumentoNome', 'Outro')
+                            num_doc = doc.get('numero', 'S/N')
+                            st.info(f"**Tipo:** {tipo_doc} | **Nº:** {num_doc} | **Data:** {doc.get('dataPublicacao', 'N/D')}\n\n{doc.get('objeto', '')}")
+                    else:
+                        st.warning("Nenhum aditivo encontrado com este número para este contrato.")
                 else:
                     st.warning("Nenhum documento/aditivo encontrado para este contrato.")
         st.markdown("---")
