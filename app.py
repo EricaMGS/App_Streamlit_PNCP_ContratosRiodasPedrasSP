@@ -11,6 +11,7 @@ from docx import Document
 from docx.shared import Pt, RGBColor, Inches
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.table import WD_TABLE_ALIGNMENT, WD_CELL_VERTICAL_ALIGNMENT
+from docx.enum.section import WD_ORIENT
 
 from fpdf import FPDF
 
@@ -20,7 +21,7 @@ from fpdf import FPDF
 # ============================================================
 
 def formatar_moeda_br(valor):
-    """Formata número para o padrão brasileiro: R$ 15.300.296,03"""
+    """Formata número para o padrão brasileiro."""
     try:
         valor = float(valor)
     except (TypeError, ValueError):
@@ -460,11 +461,7 @@ def obter_dados_registro(row, tipo):
             )
         )
 
-        try:
-            valor_fmt = formatar_moeda_br(valor)
-
-        except Exception:
-            valor_fmt = str(valor)
+        valor_fmt = formatar_moeda_br(valor)
 
         info_extra = (
             f"Fornecedor: "
@@ -487,11 +484,7 @@ def obter_dados_registro(row, tipo):
             )
         )
 
-        try:
-            valor_fmt = formatar_moeda_br(valor)
-
-        except Exception:
-            valor_fmt = str(valor)
+        valor_fmt = formatar_moeda_br(valor)
 
         info_extra = (
             f"Responsável: "
@@ -515,7 +508,7 @@ def obter_dados_registro(row, tipo):
 
 
 # ============================================================
-# PREPARAR DADOS PRINCIPAIS PARA WORD E PDF
+# DADOS PRINCIPAIS PARA WORD/PDF
 # ============================================================
 
 def preparar_dados_relatorio(df, tipo):
@@ -548,22 +541,22 @@ def preparar_dados_relatorio(df, tipo):
 
             dados.append({
                 "ID PNCP": id_pncp,
-                "Processo": processo,
+                "Processo": str(processo),
                 "Fornecedor": str(fornecedor),
                 "Valor": formatar_moeda_br(valor),
-                "Objeto": objeto
+                "Objeto": str(objeto)
             })
 
         elif tipo == "Atas de Registro de Preços":
 
             dados.append({
                 "ID PNCP": id_pncp,
-                "Ata": processo,
+                "Ata": str(processo),
                 "Vigência": info_extra.replace(
                     "Vigência: ",
                     ""
                 ),
-                "Objeto": objeto
+                "Objeto": str(objeto)
             })
 
         else:
@@ -583,30 +576,43 @@ def preparar_dados_relatorio(df, tipo):
 
             dados.append({
                 "ID PNCP": id_pncp,
-                "Processo": processo,
+                "Processo": str(processo),
                 "Modalidade": str(modalidade),
                 "Valor": formatar_moeda_br(valor),
-                "Objeto": objeto
+                "Objeto": str(objeto)
             })
 
     return dados
 
 
 # ============================================================
-# GERAR WORD
+# WORD — RELATÓRIO EXECUTIVO
 # ============================================================
 
-def gerar_word(df, tipo, data_inicio, data_fim):
+def gerar_word(
+    df,
+    tipo,
+    data_inicio,
+    data_fim
+):
 
     doc = Document()
 
-    # Margens
+    # --------------------------------------------------------
+    # CONFIGURAÇÃO DA PÁGINA
+    # --------------------------------------------------------
+
     section = doc.sections[0]
 
-    section.top_margin = Inches(0.6)
-    section.bottom_margin = Inches(0.6)
-    section.left_margin = Inches(0.6)
-    section.right_margin = Inches(0.6)
+    section.orientation = WD_ORIENT.LANDSCAPE
+
+    section.page_width = Inches(11.69)
+    section.page_height = Inches(8.27)
+
+    section.top_margin = Inches(0.55)
+    section.bottom_margin = Inches(0.55)
+    section.left_margin = Inches(0.45)
+    section.right_margin = Inches(0.45)
 
     # --------------------------------------------------------
     # TÍTULO
@@ -638,20 +644,22 @@ def gerar_word(df, tipo, data_inicio, data_fim):
     )
 
     run.bold = True
-    run.font.size = Pt(12)
+    run.font.size = Pt(11)
 
     # --------------------------------------------------------
     # INFORMAÇÕES DA CONSULTA
     # --------------------------------------------------------
 
-    doc.add_paragraph()
-
     tabela_info = doc.add_table(
-        rows=4,
-        cols=2
+        rows=2,
+        cols=4
     )
 
-    tabela_info.alignment = WD_TABLE_ALIGNMENT.CENTER
+    tabela_info.alignment = (
+        WD_TABLE_ALIGNMENT.CENTER
+    )
+
+    tabela_info.style = "Table Grid"
 
     informacoes = [
         ("Tipo de Consulta", tipo),
@@ -676,36 +684,32 @@ def gerar_word(df, tipo, data_inicio, data_fim):
         informacoes
     ):
 
+        col = i % 4
+
         tabela_info.cell(
-            i,
-            0
+            0,
+            col
         ).text = campo
 
         tabela_info.cell(
-            i,
-            1
+            1,
+            col
         ).text = valor
 
-        tabela_info.cell(
-            i,
-            0
-        ).vertical_alignment = (
-            WD_CELL_VERTICAL_ALIGNMENT.CENTER
-        )
-
-        tabela_info.cell(
-            i,
-            1
-        ).vertical_alignment = (
-            WD_CELL_VERTICAL_ALIGNMENT.CENTER
-        )
-
         for run in tabela_info.cell(
-            i,
-            0
+            0,
+            col
         ).paragraphs[0].runs:
 
             run.bold = True
+            run.font.size = Pt(8)
+
+        for run in tabela_info.cell(
+            1,
+            col
+        ).paragraphs[0].runs:
+
+            run.font.size = Pt(9)
 
     doc.add_paragraph()
 
@@ -737,10 +741,12 @@ def gerar_word(df, tipo, data_inicio, data_fim):
 
         p_valor = doc.add_paragraph()
 
-        p_valor.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p_valor.alignment = (
+            WD_ALIGN_PARAGRAPH.CENTER
+        )
 
         run = p_valor.add_run(
-            f"VALOR TOTAL ENVOLVIDO: "
+            "VALOR TOTAL ENVOLVIDO: "
             f"{formatar_moeda_br(total_valor)}"
         )
 
@@ -753,7 +759,7 @@ def gerar_word(df, tipo, data_inicio, data_fim):
         )
 
     # --------------------------------------------------------
-    # DADOS PRINCIPAIS
+    # PRINCIPAIS REGISTROS
     # --------------------------------------------------------
 
     doc.add_heading(
@@ -766,7 +772,7 @@ def gerar_word(df, tipo, data_inicio, data_fim):
         tipo
     )
 
-    # Limita o relatório executivo a 50 registros
+    # Relatório executivo: máximo 50 registros
     dados = dados[:50]
 
     if dados:
@@ -786,6 +792,36 @@ def gerar_word(df, tipo, data_inicio, data_fim):
 
         tabela.style = "Table Grid"
 
+        # Larguras específicas
+        if tipo == "Contratos":
+
+            larguras = [
+                1.65,
+                1.20,
+                2.25,
+                1.15,
+                5.10
+            ]
+
+        elif tipo == "Atas de Registro de Preços":
+
+            larguras = [
+                2.00,
+                1.60,
+                2.20,
+                5.55
+            ]
+
+        else:
+
+            larguras = [
+                1.80,
+                1.30,
+                2.00,
+                1.20,
+                5.05
+            ]
+
         # Cabeçalho
         for i, coluna in enumerate(
             colunas
@@ -795,10 +831,14 @@ def gerar_word(df, tipo, data_inicio, data_fim):
 
             cell.text = coluna
 
+            cell.width = Inches(
+                larguras[i]
+            )
+
             for run in cell.paragraphs[0].runs:
 
                 run.bold = True
-                run.font.size = Pt(9)
+                run.font.size = Pt(8)
                 run.font.color.rgb = (
                     RGBColor(
                         255,
@@ -823,19 +863,34 @@ def gerar_word(df, tipo, data_inicio, data_fim):
                     )
                 )
 
-                # Evita objetos gigantes no relatório
-                if len(valor) > 350:
+                # Mantém o objeto em tamanho
+                # razoável para relatório executivo
+                if coluna == "Objeto" and len(valor) > 500:
 
                     valor = (
-                        valor[:347]
+                        valor[:497]
                         + "..."
                     )
 
                 row_cells[i].text = valor
 
-                for run in row_cells[i].paragraphs[0].runs:
+                row_cells[i].width = Inches(
+                    larguras[i]
+                )
 
-                    run.font.size = Pt(8)
+                row_cells[i].vertical_alignment = (
+                    WD_CELL_VERTICAL_ALIGNMENT.TOP
+                )
+
+                for paragraph in row_cells[i].paragraphs:
+
+                    paragraph.alignment = (
+                        WD_ALIGN_PARAGRAPH.LEFT
+                    )
+
+                    for run in paragraph.runs:
+
+                        run.font.size = Pt(7.5)
 
     # --------------------------------------------------------
     # OBSERVAÇÃO
@@ -846,16 +901,15 @@ def gerar_word(df, tipo, data_inicio, data_fim):
     p_obs = doc.add_paragraph()
 
     run = p_obs.add_run(
-        "Observação: "
-        "Este relatório apresenta os principais "
-        "dados retornados pelo Portal Nacional "
-        "de Contratações Públicas (PNCP). "
-        "Para análise completa, recomenda-se "
-        "consultar também a planilha Excel ou "
-        "o arquivo CSV disponibilizado."
+        "Observação: este relatório apresenta os "
+        "principais dados retornados pelo Portal "
+        "Nacional de Contratações Públicas (PNCP). "
+        "Para análise completa dos registros, "
+        "consulte também a planilha Excel ou o "
+        "arquivo CSV disponibilizado."
     )
 
-    run.font.size = Pt(9)
+    run.font.size = Pt(8)
     run.italic = True
 
     # --------------------------------------------------------
@@ -881,7 +935,10 @@ def gerar_word(df, tipo, data_inicio, data_fim):
         100
     )
 
-    # Salvar
+    # --------------------------------------------------------
+    # SALVAR
+    # --------------------------------------------------------
+
     buffer = io.BytesIO()
 
     doc.save(buffer)
@@ -892,7 +949,50 @@ def gerar_word(df, tipo, data_inicio, data_fim):
 
 
 # ============================================================
-# GERAR PDF
+# PDF — TRATAMENTO DE TEXTO
+# ============================================================
+
+def limpar_texto_pdf(texto):
+
+    if texto is None:
+        return ""
+
+    texto = str(texto)
+
+    # Caracteres que não existem na fonte Arial
+    substituicoes = {
+        "\u2018": "'",
+        "\u2019": "'",
+        "\u201c": '"',
+        "\u201d": '"',
+        "\u2013": "-",
+        "\u2014": "-",
+        "\u2026": "...",
+        "\u00a0": " ",
+        "\u2022": "-",
+        "\u00ba": "o",
+        "\u00aa": "a"
+    }
+
+    for origem, destino in substituicoes.items():
+
+        texto = texto.replace(
+            origem,
+            destino
+        )
+
+    return (
+        texto
+        .encode(
+            "latin-1",
+            "replace"
+        )
+        .decode("latin-1")
+    )
+
+
+# ============================================================
+# PDF — CLASSE
 # ============================================================
 
 class RelatorioPDF(FPDF):
@@ -907,7 +1007,7 @@ class RelatorioPDF(FPDF):
 
         self.cell(
             0,
-            8,
+            7,
             "RELATORIO EXECUTIVO",
             ln=True,
             align="C"
@@ -941,20 +1041,20 @@ class RelatorioPDF(FPDF):
             align="C"
         )
 
-        self.ln(4)
+        self.ln(3)
 
         self.line(
             10,
             self.get_y(),
-            200,
+            287,
             self.get_y()
         )
 
-        self.ln(5)
+        self.ln(4)
 
     def footer(self):
 
-        self.set_y(-15)
+        self.set_y(-12)
 
         self.set_font(
             "Arial",
@@ -964,28 +1064,190 @@ class RelatorioPDF(FPDF):
 
         self.cell(
             0,
-            10,
+            8,
+            f"Portal PNCP - Rio das Pedras/SP | "
             f"Pagina {self.page_no()}",
             align="C"
         )
 
 
-def limpar_texto_pdf(texto):
+# ============================================================
+# PDF — CALCULAR ALTURA DA LINHA
+# ============================================================
 
-    if texto is None:
-        return ""
+def calcular_altura_linha_pdf(
+    pdf,
+    valores,
+    larguras,
+    altura_linha=4
+):
 
-    texto = str(texto)
+    maior_linhas = 1
+
+    for valor, largura in zip(
+        valores,
+        larguras
+    ):
+
+        texto = limpar_texto_pdf(
+            valor
+        )
+
+        linhas = pdf.multi_cell(
+            largura,
+            altura_linha,
+            texto,
+            border=0,
+            split_only=True
+        )
+
+        if isinstance(linhas, list):
+
+            quantidade = max(
+                1,
+                len(linhas)
+            )
+
+        else:
+
+            quantidade = 1
+
+        maior_linhas = max(
+            maior_linhas,
+            quantidade
+        )
 
     return (
-        texto
-        .encode(
-            "latin-1",
-            "replace"
-        )
-        .decode("latin-1")
+        maior_linhas
+        * altura_linha
+        + 2
     )
 
+
+# ============================================================
+# PDF — DESENHAR LINHA DA TABELA
+# ============================================================
+
+def desenhar_linha_pdf(
+    pdf,
+    valores,
+    larguras,
+    altura_linha=4,
+    negrito=False
+):
+
+    y_inicial = pdf.get_y()
+
+    altura = calcular_altura_linha_pdf(
+        pdf,
+        valores,
+        larguras,
+        altura_linha
+    )
+
+    # Verifica quebra de página
+    if (
+        y_inicial + altura
+        > pdf.page_break_trigger
+    ):
+
+        pdf.add_page()
+
+        y_inicial = pdf.get_y()
+
+    # Fonte
+    pdf.set_font(
+        "Arial",
+        "B" if negrito else "",
+        7.5
+    )
+
+    x_atual = pdf.get_x()
+
+    for valor, largura in zip(
+        valores,
+        larguras
+    ):
+
+        texto = limpar_texto_pdf(
+            valor
+        )
+
+        pdf.set_xy(
+            x_atual,
+            y_inicial
+        )
+
+        pdf.multi_cell(
+            largura,
+            altura_linha,
+            texto,
+            border=1,
+            align="L",
+            fill=False
+        )
+
+        x_atual += largura
+
+    pdf.set_xy(
+        pdf.l_margin,
+        y_inicial + altura
+    )
+
+    return altura
+
+
+# ============================================================
+# PDF — CABEÇALHO DA TABELA
+# ============================================================
+
+def desenhar_cabecalho_tabela(
+    pdf,
+    colunas,
+    larguras
+):
+
+    pdf.set_font(
+        "Arial",
+        "B",
+        7.5
+    )
+
+    y = pdf.get_y()
+
+    altura = 8
+
+    x = pdf.get_x()
+
+    for titulo, largura in zip(
+        colunas,
+        larguras
+    ):
+
+        pdf.set_xy(
+            x,
+            y
+        )
+
+        pdf.multi_cell(
+            largura,
+            altura,
+            limpar_texto_pdf(titulo),
+            border=1,
+            align="C"
+        )
+
+        x += largura
+
+    pdf.set_xy(
+        pdf.l_margin,
+        y + altura
+    )
+
+
+# ============================================================
+# PDF — RELATÓRIO EXECUTIVO
+# ============================================================
 
 def gerar_pdf(
     df,
@@ -1014,43 +1276,43 @@ def gerar_pdf(
     pdf.set_font(
         "Arial",
         "B",
-        10
+        9
     )
 
     pdf.cell(
-        40,
-        7,
+        38,
+        6,
         "Tipo de Consulta:"
     )
 
     pdf.set_font(
         "Arial",
         "",
-        10
+        9
     )
 
     pdf.cell(
-        80,
-        7,
+        65,
+        6,
         limpar_texto_pdf(tipo)
     )
 
     pdf.set_font(
         "Arial",
         "B",
-        10
+        9
     )
 
     pdf.cell(
-        30,
-        7,
+        20,
+        6,
         "Periodo:"
     )
 
     pdf.set_font(
         "Arial",
         "",
-        10
+        9
     )
 
     periodo = (
@@ -1059,38 +1321,41 @@ def gerar_pdf(
     )
 
     pdf.cell(
-        70,
-        7,
+        45,
+        6,
         periodo
     )
-
-    pdf.ln(8)
 
     pdf.set_font(
         "Arial",
         "B",
-        10
+        9
     )
 
     pdf.cell(
-        40,
-        7,
+        32,
+        6,
         "Total de Registros:"
     )
 
     pdf.set_font(
         "Arial",
         "",
-        10
+        9
     )
 
     pdf.cell(
-        30,
-        7,
+        15,
+        6,
         str(len(df))
     )
 
-    # Valor total
+    pdf.ln(7)
+
+    # --------------------------------------------------------
+    # VALOR TOTAL
+    # --------------------------------------------------------
+
     colunas_valor = [
         "valorGlobal",
         "valorInicial",
@@ -1122,12 +1387,12 @@ def gerar_pdf(
         pdf.cell(
             45,
             7,
-            "Valor Total:"
+            "VALOR TOTAL ENVOLVIDO:"
         )
 
         pdf.set_font(
             "Arial",
-            "",
+            "B",
             10
         )
 
@@ -1141,16 +1406,16 @@ def gerar_pdf(
             )
         )
 
-    pdf.ln(10)
+        pdf.ln(8)
 
     # --------------------------------------------------------
-    # TABELA PRINCIPAL
+    # TÍTULO DA TABELA
     # --------------------------------------------------------
 
     pdf.set_font(
         "Arial",
         "B",
-        11
+        10
     )
 
     pdf.cell(
@@ -1161,6 +1426,10 @@ def gerar_pdf(
     )
 
     pdf.ln(2)
+
+    # --------------------------------------------------------
+    # DADOS
+    # --------------------------------------------------------
 
     dados = preparar_dados_relatorio(
         df,
@@ -1174,12 +1443,12 @@ def gerar_pdf(
         pdf.set_font(
             "Arial",
             "",
-            10
+            9
         )
 
         pdf.cell(
             0,
-            8,
+            7,
             "Nenhum registro disponivel.",
             ln=True
         )
@@ -1187,125 +1456,155 @@ def gerar_pdf(
     else:
 
         # ----------------------------------------------------
-        # Configuração das colunas
+        # COLUNAS
         # ----------------------------------------------------
 
         if tipo == "Contratos":
 
             colunas = [
-                ("ID PNCP", 38),
-                ("Processo", 25),
-                ("Fornecedor", 48),
-                ("Valor", 30),
-                ("Objeto", 106)
+                "ID PNCP",
+                "Processo",
+                "Fornecedor",
+                "Valor",
+                "Objeto"
+            ]
+
+            larguras = [
+                40,
+                25,
+                48,
+                28,
+                146
             ]
 
         elif tipo == "Atas de Registro de Preços":
 
             colunas = [
-                ("ID PNCP", 40),
-                ("Ata", 35),
-                ("Vigencia", 45),
-                ("Objeto", 127)
+                "ID PNCP",
+                "Ata",
+                "Vigencia",
+                "Objeto"
+            ]
+
+            larguras = [
+                45,
+                35,
+                50,
+                157
             ]
 
         else:
 
             colunas = [
-                ("ID PNCP", 38),
-                ("Processo", 25),
-                ("Modalidade", 40),
-                ("Valor", 30),
-                ("Objeto", 114)
+                "ID PNCP",
+                "Processo",
+                "Modalidade",
+                "Valor",
+                "Objeto"
             ]
 
-        # Cabeçalho
-        pdf.set_font(
-            "Arial",
-            "B",
-            8
+            larguras = [
+                40,
+                25,
+                42,
+                28,
+                152
+            ]
+
+        # ----------------------------------------------------
+        # CABEÇALHO
+        # ----------------------------------------------------
+
+        desenhar_cabecalho_tabela(
+            pdf,
+            colunas,
+            larguras
         )
 
-        for titulo, largura in colunas:
-
-            pdf.cell(
-                largura,
-                8,
-                limpar_texto_pdf(titulo),
-                border=1,
-                align="C"
-            )
-
-        pdf.ln()
-
-        # Linhas
-        pdf.set_font(
-            "Arial",
-            "",
-            7
-        )
+        # ----------------------------------------------------
+        # REGISTROS
+        # ----------------------------------------------------
 
         for item in dados:
 
-            altura = 14
-
-            for coluna, largura in colunas:
-
-                valor = str(
+            valores = [
+                str(
                     item.get(
                         coluna,
                         ""
                     )
                 )
+                for coluna in colunas
+            ]
 
-                if len(valor) > 150:
+            # Limita somente textos muito extensos
+            # para preservar o caráter executivo.
+            for i, coluna in enumerate(colunas):
 
-                    valor = (
-                        valor[:147]
-                        + "..."
-                    )
+                if coluna == "Objeto":
 
-                valor = limpar_texto_pdf(
-                    valor
+                    if len(valores[i]) > 700:
+
+                        valores[i] = (
+                            valores[i][:697]
+                            + "..."
+                        )
+
+            y_antes = pdf.get_y()
+
+            altura = desenhar_linha_pdf(
+                pdf,
+                valores,
+                larguras,
+                altura_linha=4,
+                negrito=False
+            )
+
+            # Se houve quebra automática de página,
+            # desenha novamente o cabeçalho.
+            if (
+                y_antes + altura
+                > pdf.page_break_trigger
+            ):
+
+                desenhar_cabecalho_tabela(
+                    pdf,
+                    colunas,
+                    larguras
                 )
 
-                pdf.cell(
-                    largura,
-                    altura,
-                    valor,
-                    border=1,
-                    align="L"
-                )
+        # ----------------------------------------------------
+        # OBSERVAÇÃO
+        # ----------------------------------------------------
 
-            pdf.ln()
+        pdf.ln(5)
 
-    # --------------------------------------------------------
-    # OBSERVAÇÃO
-    # --------------------------------------------------------
-
-    pdf.ln(6)
-
-    pdf.set_font(
-        "Arial",
-        "I",
-        8
-    )
-
-    observacao = (
-        "Observacao: este relatorio apresenta "
-        "os principais dados retornados pelo "
-        "Portal Nacional de Contratacoes Publicas "
-        "(PNCP). Para analise completa, consulte "
-        "tambem os arquivos Excel e CSV."
-    )
-
-    pdf.multi_cell(
-        0,
-        4,
-        limpar_texto_pdf(
-            observacao
+        pdf.set_font(
+            "Arial",
+            "I",
+            7.5
         )
-    )
+
+        observacao = (
+            "Observacao: este relatorio apresenta "
+            "os principais dados retornados pelo "
+            "Portal Nacional de Contratacoes Publicas "
+            "(PNCP). Para analise completa dos "
+            "registros, consulte tambem os arquivos "
+            "Excel e CSV."
+        )
+
+        pdf.multi_cell(
+            0,
+            4,
+            limpar_texto_pdf(
+                observacao
+            )
+        )
+
+    # --------------------------------------------------------
+    # SAÍDA
+    # --------------------------------------------------------
 
     pdf_bytes = pdf.output(
         dest="S"
@@ -1574,7 +1873,6 @@ if (
             "Dados"
         ]
 
-        # Ajuste automático das larguras
         for coluna in worksheet.columns:
 
             tamanho = 0
