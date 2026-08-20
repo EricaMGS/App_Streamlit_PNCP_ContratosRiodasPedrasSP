@@ -108,10 +108,10 @@ if st.session_state.tipo_anterior != tipo_consulta:
     st.session_state.tipo_anterior = tipo_consulta
 
 # ============================================================
-# FUNÇÕES DE CONSULTA
+# FUNÇÕES DE CONSULTA COM BACKOFF EXPONENCIAL (TRATAMENTO DO ERRO 502)
 # ============================================================
 
-def consultar_pncp(url, params, max_tentativas=3):
+def consultar_pncp(url, params, max_tentativas=5):
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/151.0 Safari/537.36",
         "Accept": "application/json",
@@ -129,30 +129,29 @@ def consultar_pncp(url, params, max_tentativas=3):
                     raise Exception("O PNCP respondeu, mas não enviou um JSON válido.")
             if resp.status_code == 204:
                 return []
+            
+            # Tratamento robusto para erros de gateway e servidor (502, 500, etc.)
             if resp.status_code in [429, 500, 502, 503, 504]:
                 if tentativa < max_tentativas:
-                    espera = tentativa * 3
-                    st.warning(f"⚠️ O Portal PNCP está demorando. Nova tentativa em {espera}s ({tentativa}/{max_tentativas}).")
+                    # Backoff exponencial: 2, 4, 8, 16 segundos...
+                    espera = 2 ** tentativa
+                    st.warning(f"⚠️ Servidor instável (Erro {resp.status_code}). Nova tentativa em {espera}s ({tentativa}/{max_tentativas}).")
                     time.sleep(espera)
                     continue
+            
             raise Exception(f"API retornou HTTP {resp.status_code}: {resp.text[:500]}")
-        except requests.exceptions.Timeout as e:
+            
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
             ultima_excecao = e
             if tentativa < max_tentativas:
-                espera = tentativa * 3
-                st.warning(f"⏳ Timeout no PNCP. Nova tentativa em {espera}s ({tentativa}/{max_tentativas}).")
+                espera = 2 ** tentativa
+                st.warning(f"🌐 Problema de rede ou Timeout. Nova tentativa em {espera}s ({tentativa}/{max_tentativas}).")
                 time.sleep(espera)
-            continue
-        except requests.exceptions.ConnectionError as e:
-            ultima_excecao = e
-            if tentativa < max_tentativas:
-                espera = tentativa * 3
-                st.warning(f"🌐 Erro de conexão. Nova tentativa em {espera}s ({tentativa}/{max_tentativas}).")
-                time.sleep(espera)
-            continue
+                continue
         except Exception:
             raise
-    raise ultima_excecao
+            
+    raise ultima_excecao or Exception("Falha de conexão com o PNCP após várias tentativas.")
 
 def consultar_detalhes_contrato(id_contrato):
     """Busca documentos vinculados a um contrato específico (Aditivos/Apostilamentos)."""
