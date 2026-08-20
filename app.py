@@ -317,15 +317,14 @@ if st.sidebar.button("🔎 Gerar Relatório", type="primary"):
         st.error(f"❌ Erro: {str(e)}")
 
 # ============================================================
-# EXIBIÇÃO PERSISTENTE NO DASHBOARD
+# EXIBIÇÃO PERSISTENTE NO DASHBOARD (COM EXPORTAÇÃO NO TOPO)
 # ============================================================
 
 if st.session_state.df_resultado is not None and not st.session_state.df_resultado.empty:
     df = st.session_state.df_resultado
     st.success(f"📊 Exibindo {len(df)} registros para Rio das Pedras/SP.")
     
-    st.dataframe(df, use_container_width=True, hide_index=True)
-
+    # OPÇÕES DE EXPORTAÇÃO MOVIDAS PARA A PARTE DE CIMA
     st.markdown("### 📥 Opções de Exportação")
     cols = st.columns(4)
     nome = tipo_consulta.replace(" ", "_").replace("/", "_")
@@ -338,18 +337,15 @@ if st.session_state.df_resultado is not None and not st.session_state.df_resulta
     # CSV
     cols[1].download_button("📄 CSV (.csv)", df.to_csv(index=False, encoding="utf-8-sig"), f"{nome}_Rio_Das_Pedras.csv", mime="text/csv")
 
-    # ============================================================
-    # WORD FORMATADO E LIMPO
-    # ============================================================
+    # Word Formatado e Limpo
     doc = Document()
-    
     p_titulo = doc.add_paragraph()
     r_titulo = p_titulo.add_run(f"Relatório Executivo: {tipo_consulta}")
     r_titulo.bold = True
     r_titulo.font.size = Pt(16)
     r_titulo.font.color.rgb = RGBColor(0, 51, 102)
     
-    doc.add_paragraph(f"Município: Prefeitura Municipal de Rio das Pedras / SP")
+    doc.add_paragraph("Município: Prefeitura Municipal de Rio das Pedras / SP")
     doc.add_paragraph(f"Período: {data_inicio.strftime('%d/%m/%Y')} a {data_fim.strftime('%d/%m/%Y')}")
     doc.add_paragraph(f"Total de Registros: {len(df)}")
     doc.add_heading("Detalhamento dos Registros", level=2)
@@ -372,9 +368,7 @@ if st.session_state.df_resultado is not None and not st.session_state.df_resulta
     buffer_docx.seek(0)
     cols[2].download_button("📝 Word (.docx)", buffer_docx.getvalue(), f"Relatorio_{nome}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
-    # ============================================================
-    # PDF FORMATADO E LIMPO
-    # ============================================================
+    # PDF Formatado e Limpo
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
@@ -393,9 +387,7 @@ if st.session_state.df_resultado is not None and not st.session_state.df_resulta
 
     for idx, row in df.head(30).iterrows():
         id_pncp, processo, info_extra, objeto = obter_dados_registro(row, tipo_consulta)
-
         bloco = f"[{idx+1}] ID PNCP: {id_pncp} | Proc: {processo} | {info_extra}\nObjeto: {objeto}"
-        
         bloco_limpo = bloco.encode("latin-1", "replace").decode("latin-1")
         pdf.multi_cell(0, 5, txt=bloco_limpo)
         pdf.ln(3)
@@ -404,3 +396,8 @@ if st.session_state.df_resultado is not None and not st.session_state.df_resulta
     if isinstance(pdf_bytes, str):
         pdf_bytes = pdf_bytes.encode("latin-1")
     cols[3].download_button("📕 PDF (.pdf)", pdf_bytes, f"Relatorio_{nome}.pdf", mime="application/pdf")
+
+    st.markdown("---")
+    
+    # EXIBIÇÃO DA TABELA LOGO ABAIXO DOS BOTÕES DE EXPORTAÇÃO
+    st.dataframe(df, use_container_width=True, hide_index=True)
